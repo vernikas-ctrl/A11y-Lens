@@ -17,8 +17,8 @@ page identity" — that is why every report carries its own `url`.
 GET /health
 ```
 
-No authentication. Used by Render to know the service is alive, and by the
-frontend to detect a sleeping backend.
+No authentication. Used by the deploy host to know the service is alive, and
+by the frontend to detect a sleeping backend.
 
 **200**
 ```json

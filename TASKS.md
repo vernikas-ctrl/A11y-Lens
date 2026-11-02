@@ -5,7 +5,8 @@ scans it with axe-core → the Claude API explains each issue in plain language
 and suggests a corrected code snippet → the frontend shows the report.
 
 **Stack** (from `CLAUDE.md`): `frontend/` React + TypeScript + Tailwind + Vite
-on Vercel. `backend/` Python 3.12 + FastAPI + Playwright on Render.
+on Vercel. `backend/` Python 3.14 + FastAPI + Playwright, on a host chosen in
+Phase 10.
 
 ---
 
@@ -95,29 +96,39 @@ download later is roughly one task; adding history is four or five.
 
 ## Phase 1 — Prove the risky part first
 
-Playwright drives a full Chromium browser, which typically wants 300–500MB of
-memory once a real page is loaded. Render's free tier gives you 512MB. That
-might be fine or it might get killed mid-scan, and **nobody knows until it's
-tested**. Finding out now costs an hour; finding out in Phase 10 costs a
-rebuild.
+Playwright drives a full Chromium browser, which wants a lot of memory once a
+real page is loaded. How much was the single biggest unvalidated assumption in
+this plan, and everything from Phase 2 onwards is built on the answer. Finding
+out now costs an hour; finding out in Phase 10 costs a rebuild.
+
+**Both tasks are done, and the answer was not the expected one.** A scan of a
+heavy page peaks near **859MB** — not the 300–500MB assumed, and well over the
+512MB a free tier typically offers. Lighter scan settings recover only 80MB of
+that, so the fallback is a bigger host, not a tuned browser. Full numbers and
+method in `DECISIONS.md`.
 
 - [x] **1.1 Launch a browser locally** — a standalone script: open headless
   Chromium, visit a URL, print the page title. ~45 min
   **Done when:** running the script prints the real title of `example.com`.
 
-- [ ] **1.2 Spike: run Chromium on Render's free tier** — deploy a near-empty
-  FastAPI app that does nothing but launch Chromium, load a heavy real page,
-  report peak memory, and shut down. Throwaway code; the answer is the
-  deliverable. ~1 hr
+- [x] **1.2 Measure what a scan actually costs in memory** — a script that
+  launches Chromium, loads a heavy real page, runs a full axe-core scan over
+  it, and samples the whole process tree's memory to report the peak. Runs
+  locally, so it needs no hosting account, no card and no signup. A second
+  `--lean` mode measures the cost of the obvious savings rather than guessing
+  at them. ~1 hr
   **Done when:** `DECISIONS.md` records the measured peak memory, whether it
-  survived, and — if it didn't — which fallback you're taking (lighter scan
-  settings, a different host, or a paid tier).
+  fits a 512MB tier, and — since it doesn't — which fallback you're taking
+  (lighter scan settings, a different host, or a paid tier).
+  *Originally "deploy a spike to Render's free tier". Rewritten because the
+  useful number is how much a scan needs, which is the same whoever hosts it —
+  and measuring it locally unblocked the whole phase without an account.*
 
 ---
 
 ## Phase 2 — Backend skeleton
 
-- [ ] **2.1 Python 3.12 environment and FastAPI** — virtual environment,
+- [ ] **2.1 Python 3.14 environment and FastAPI** — virtual environment,
   `requirements.txt`, FastAPI + uvicorn, and `GET /health` returning
   `{"status": "ok"}`. ~45 min
   **Done when:** `uvicorn` runs locally and `localhost:8000/health` returns
@@ -454,19 +465,30 @@ through your app specifically to check.
 
 ## Phase 10 — Deploy
 
+- [ ] **10.0 Choose the backend host** — Phase 1.2 measured a scan peaking near
+  859MB, so a 512MB free tier is out. Compare what is actually available at the
+  time (free tiers change constantly — the notes in `DECISIONS.md` are from
+  2 Nov 2026 and must be re-verified) on memory ceiling, whether a card is
+  required, and idle spin-down behaviour. ~45 min
+  **Done when:** `DECISIONS.md` names the host, its memory ceiling, and what it
+  costs if the free allowance runs out.
+
 - [ ] **10.1 Make the backend deployable** — Playwright needs system browser
   libraries absent from a plain Python image; this is the most common deploy
-  failure here. Pin the Python version, install the browser in the build, and
-  apply whatever Phase 1.2 taught you about memory. ~1 hr
-  **Done when:** a local container build runs a successful scan.
+  failure here. Pin the Python version and install the browser in the build.
+  Then settle the question Phase 1.2 could not: run the container with a hard
+  memory cap (`docker run -m <limit>`) and confirm a scan survives it, since a
+  Windows measurement is indicative only. ~1 hr
+  **Done when:** a local container build with a hard memory cap runs a
+  successful scan without being killed.
 
-- [ ] **10.2 Deploy the backend to Render** — service created, environment
-  variables set in the dashboard (never committed), `/health` reachable
-  publicly. ~1 hr
+- [ ] **10.2 Deploy the backend** — service created on the host chosen in 10.0,
+  environment variables set in its dashboard (never committed), `/health`
+  reachable publicly. ~1 hr
   **Done when:** the public `/health` returns ok and a real `POST /scan` with
   the access code returns violations.
 
-- [ ] **10.3 Deploy the frontend to Vercel** — pointing at the Render URL via a
+- [ ] **10.3 Deploy the frontend to Vercel** — pointing at the backend URL via a
   build-time env var. ~45 min
   **Done when:** the public Vercel URL shows the demo page instantly, and a
   real scan works once the code is entered.

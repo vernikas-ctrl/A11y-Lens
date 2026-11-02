@@ -144,3 +144,76 @@ compiled wheels for Playwright's dependencies; it did not.
 version. A `.python-version` file at the repo root pins it, so Render cannot
 silently pick something else later. "Works on my machine, fails on deploy" is
 nearly always this.
+
+---
+
+## 2026-11-02 — A scan needs far more than 512MB, so the host is decided later
+
+**Decided:** Task 1.2 no longer deploys to Render. Chromium's memory cost was
+measured locally instead, and the choice of deploy host moves to Phase 10.
+`CLAUDE.md` no longer names Render.
+
+**The measurement.** `backend/scripts/memory_check.py` launches Chromium, loads
+a heavy real page, injects axe-core 4.14.0, runs a full scan, and samples the
+memory of every process in the tree every 100ms. Peak resident memory:
+
+| Page | Everything loaded | Images, media and fonts blocked |
+|---|---|---|
+| Wikipedia, "World War II" | **859 MB** | 779 MB |
+| The Guardian, front page | 536 MB | 528 MB |
+| `example.com` (the floor) | 321 MB | 318 MB |
+
+That last row is the one that kills 512MB outright. `example.com` is a heading
+and one paragraph — there is no lighter real page — and it still costs 321MB,
+because that is roughly what Chromium itself costs before any content. A 512MB
+instance would have about 190MB of headroom for the actual page, and the
+Guardian's front page alone needs more than that.
+
+**Why:** 512MB was Render's number, not ours. The figure that matters — how
+much a scan needs — is the same whoever hosts it, and measuring it locally
+needs no hosting account, no credit card and no signup. Deferring the host
+choice also means it gets made against a measured number instead of a hope.
+
+**What this changes.** A 512MB instance was not marginal; it was wrong by a
+factor of about 1.7. Had we built Phases 2–9 against that assumption and
+discovered this at deploy time, the fix would have been a host migration with
+the whole backend already written around the wrong constraint. **Phase 1 paid
+for itself here.**
+
+**The fallback, also measured.** `--lean` mode blocks images, media and fonts,
+shrinks the viewport and waits only for `domcontentloaded`. It saved **80MB of
+859** — nowhere near enough to reach 512MB. Lighter scan settings are therefore
+*not* a viable fallback, and the fallback is a host with more memory. Worth
+knowing before someone spends a day tuning Chromium flags.
+
+**Lean mode is not free either.** Violations found on the Wikipedia article
+went from 7 to 6 with resources blocked. Blocking fonts and images changes what
+axe can see, so lean mode trades accuracy for memory. Stylesheets were left
+loading on purpose, because `color-contrast` cannot be judged without them.
+If lean mode is ever adopted, that accuracy loss needs its own measurement.
+
+**Cost and honest limits of this number:**
+
+1. **Measured on Windows.** Chromium divides work across processes differently
+   on Linux, and resident memory is accounted differently. This is the right
+   order of magnitude, not a verdict on a specific Linux box.
+2. **Summing per-process RSS over-counts shared memory.** Pages shared between
+   Chromium's processes are counted once per process, so the true figure a
+   container limit would see is somewhat lower than 859MB. Lower — but not
+   40% lower, which is what 512MB would require.
+3. **Deliberately a worst case.** `wait_until="load"` plus a full axe run on one
+   of the longest articles on the web. A typical page will cost less.
+4. **Still unsettled:** whether it survives a hard container limit. That needs
+   `docker run -m 512m`, and neither Docker nor WSL is installed on this
+   machine. Task 10.1 builds a container anyway, so that is where it belongs.
+
+**Hosts checked while deciding (re-verify in Phase 10; these change often):**
+Render free web services spin down after 15 minutes idle and give 512MB —
+likely too small. Fly.io has had no free tier for new accounts since Oct 2024.
+Hugging Face Spaces offers free Docker hosting with far more memory, but
+community reports say new accounts may get zero free CPU quota. Google Cloud
+Run has a generous free tier but requires a card.
+
+**Why deferring is safe:** Phases 2–9 are thirty tasks that run entirely on a
+laptop, and task 8.1's demo page renders a saved report with the backend
+switched off — so the public link works whether or not a backend is deployed.

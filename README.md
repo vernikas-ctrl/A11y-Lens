@@ -15,7 +15,7 @@ tool knew what the image showed.
 | | |
 |---|---|
 | `frontend/` | React + TypeScript + Tailwind + Vite — deploys to Vercel |
-| `backend/` | Python 3.12 + FastAPI + Playwright — deploys to Render |
+| `backend/` | Python 3.14 + FastAPI + Playwright — deploy host chosen in Phase 10 |
 
 ## Limits worth knowing
 
