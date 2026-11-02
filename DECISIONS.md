@@ -333,3 +333,170 @@ blocked, and the proper fix is a proxy layer that would cost more than the rest
 of Phase 3 put together. **If this app ever ran inside a network with anything
 worth reaching, this decision would have to be revisited** — the reason it is
 tolerable is that there is nothing interesting next to it.
+
+---
+
+## 2026-11-02 — axe-core lives in the repo, and the scanner is async
+
+**Decided:** three things about how the scanner is built, all of which would
+have been expensive to change later.
+
+**1. axe-core 4.14.0 is committed to the repo** (`backend/app/vendor/axe-core/`,
+652KB, MPL-2.0, licence included) rather than fetched from a CDN at scan time.
+Phase 1's spike pulled it from jsdelivr, which is fine for a throwaway script
+and wrong for the real thing: every scan would depend on someone else's server
+being up at the moment a user clicks the button, and would spend part of its
+time downloading 650KB that never changes. Vendoring also means the test suite
+runs with no internet. *Cost:* updating axe is now a manual act. That is
+arguably the point — an axe update changes what the scanner finds, so it should
+be a decision with a test run attached, not something that happens silently
+between two scans.
+
+**2. The scanner is written against Playwright's async API.** Playwright's
+synchronous API cannot be called from inside a running event loop, which is
+exactly what FastAPI is. Task 4.6 puts one browser behind the whole server, so
+the browser has to live in the server's own loop. Writing it synchronously now
+would mean rewriting every line of it at 4.6. *Cost:* the code is denser to
+read, so it carries more comment than it otherwise would.
+
+**3. The scanner does not check its own URLs.** `app.url_safety` is applied by
+the endpoint (task 4.7), not by `app.scanner`. This looks like a hole and is
+not: `check_url` refuses `file://` and private addresses, correctly, and the
+test fixture is a local file — so a scanner that policed its own input could
+never be tested against a page we control, and the tests would have to point at
+a real website that can be redesigned without warning. Enforcing the check
+once, at the front door, keeps it in one place and keeps the scanner testable.
+*Cost:* a future second caller of the scanner could forget the check. Guarded
+by a test on the endpoint asserting the check is applied there.
+
+---
+
+## 2026-11-02 — The fixture carries a fault the scanner cannot see
+
+**Decided:** `backend/tests/fixtures/broken.html` contains a seventh fault that
+axe-core does not report, documented as a blind spot, with a test asserting it
+stays unreported.
+
+**How it was found.** The fixture was built with six planted faults and the
+first scan found five. The missing one was the unlabelled form field — and the
+reason was not a scanner bug. The field had `placeholder="Search"` and nothing
+else, and **axe-core treats a placeholder as a valid accessible name and passes
+the rule outright.** Not a warning, not an "incomplete" result: a clean pass,
+confirmed by querying axe about that one element directly.
+
+axe is right about the specification and wrong about the person. Placeholder
+text disappears the instant someone starts typing, so anyone who pauses
+mid-form has lost the only thing that said what the box was for — and its
+usual grey-on-white styling tends to fail contrast as well.
+
+**Why it stayed in.** The README and the empty-results screen (task 8.9) both
+claim automated tools catch roughly a third of real accessibility problems.
+This page can now *demonstrate* that instead of only asserting it, with a
+concrete example, on the one page a reviewer is most likely to read.
+
+**Cost:** a test that asserts something is *not* found, which is a shape of
+test that usually ages badly. Accepted because it is the only way the gap stays
+honest: if a future axe-core starts catching it, the test fails and says so,
+rather than the blind spot quietly closing while the README keeps claiming it.
+
+**The first instinct was that the scanner was broken.** Worth recording, because
+it is the same instinct that would have led to deleting the planted fault and
+never finding out why.
+
+---
+
+## 2026-11-02 — One browser for the whole server, and a "Done when" that was wrong
+
+**Decided:** Chromium is launched once, when the app starts, and every scan
+gets a fresh *context* inside it rather than a fresh browser.
+
+**Why.** Phase 1 measured Chromium's floor at about 321MB and several seconds
+for a page consisting of one heading. That is a cost that only needs paying
+once. Launching per request would also mean two browsers alive at the same
+moment whenever two requests overlap, which on a memory-limited host is how a
+process gets killed rather than merely slowed.
+
+A context is Playwright's word for a private browser profile: its own cookies,
+storage and cache. One per scan means two scans cannot see each other, which
+matters because the URLs come from strangers. The context is closed in a
+`finally`, so a failed scan releases its memory too.
+
+**The measurement, from `backend/scripts/scan_loop_check.py`, ten scans of
+`example.com`:**
+
+| | |
+|---|---|
+| Browser launched, before any scan | 212 MB |
+| After the first scan | 331 MB |
+| Oscillating across scans 2–10 | 358–412 MB, no trend |
+| Peak | 412 MB |
+| After the browser stops | 65 MB |
+| Chromium processes | 6, unchanged throughout |
+
+Memory rises once as caches fill and then moves up and down without climbing.
+A leak looks like roughly the same increase on every scan; this does not.
+
+**Task 4.6's stated "Done when" was wrong, and the measurement is what showed
+it.** It asked for the second scan to be measurably faster than the first. It
+is not: on an already-running browser the first scan took 0.84s and later
+scans averaged 0.75s, which is noise. The saving from reuse is **the browser
+launch**, which the first scan does not pay for either, because the app
+launched it at startup.
+
+So the test asserts the two things that are actually true and actually exact:
+the browser object is the same one for every scan (which fails immediately if
+reuse is removed — checked by removing it), and a warm scan costs less than
+starting a browser and scanning. The timing numbers live in the script, which
+prints them for a person to judge, rather than in a test that would invent a
+threshold and fail on a busy laptop.
+
+**Cost:** the browser is started eagerly at app startup, so the server takes
+about a second longer to become ready. Deliberate: the alternative is the
+first user paying for it on top of their own scan, and on a free tier that
+sleeps, that user is arriving at the worst possible moment anyway.
+
+---
+
+## 2026-11-02 — Every failure a scan can have, named
+
+**Decided:** the mapping from "something went wrong" to the contract's error
+codes, settled once in `app/scanner.py` rather than per call site.
+
+| What happened | Code | Status |
+|---|---|---|
+| Page never finished loading | `scan_timeout` | 504 |
+| axe itself did not finish in time | `scan_timeout` | 504 |
+| `net::ERR_TIMED_OUT`, `ERR_CONNECTION_TIMED_OUT` | `scan_timeout` | 504 |
+| Any other `net::` failure — no such domain, refused, bad certificate, redirect loop | `unreachable` | 502 |
+| Target returned 4xx or 5xx | `unreachable` | 502 |
+
+**Two judgement calls worth writing down.**
+
+A connection that *times out* is reported as a timeout and not as an
+unreachable host, even though both mean "no page". The person reading the
+message has to decide whether to try again, and those two answers differ.
+
+A target returning 404 or 500 is `unreachable`, which is arguable — an error
+page is still a page, and scanning it would produce findings. But someone who
+typed a URL expecting a page has not got one, and reporting on the
+accessibility of the error page answers a question they did not ask.
+`docs/api-contract.md` already settled this; the code follows it.
+
+**Nothing from the exception reaches the user.** Chromium's error text can
+carry local file paths, and these responses go to strangers. `detail` says
+what happened in plain words; the code is what the frontend branches on. There
+is a test that plants a Windows path in an error message and asserts it does
+not come back.
+
+**Also built here: the DNS-rebinding mitigation promised in Phase 3.** Every
+request the page makes — not just the URL that was typed — is re-checked, and
+aborted if it points somewhere private. That covers an embedded
+`<img src="http://169.254.169.254/latest/meta-data/">` and covers redirects,
+neither of which `check_url` can see. A blocked request is aborted rather than
+failing the scan: one blocked image should not lose the whole report.
+
+**Worth knowing for Phase 10:** the browser announces itself as headless
+Chrome. Some sites serve a challenge page or a block to headless browsers,
+which would arrive here as `unreachable` with nothing explaining why. Not hit
+yet, not worked around, and worth remembering when the first real-world scan
+fails for no visible reason.

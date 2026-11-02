@@ -1,0 +1,178 @@
+<!doctype html>
+<!--
+  Task 4.1 -- a deliberately broken page, for the scanner to find things in.
+
+  WHY A LOCAL FILE: the alternative is pointing the tests at a real website.
+  That makes every test run depend on the internet, and on someone else's site
+  not being redesigned. A test that fails because a stranger shipped a fix is
+  a test nobody trusts. This file changes only when we change it.
+
+  SIX PLANTED FAULTS, one of each kind, each marked FAULT below with the
+  axe-core rule it should trigger. Everything else on the page is deliberately
+  correct, so anything else that shows up is a surprise worth looking at.
+
+  PLUS ONE FAULT AXE CANNOT SEE, marked BLIND SPOT, discovered while building
+  this file. It is here on purpose: the README and the empty-results screen
+  both claim automated tools catch roughly a third of real accessibility
+  problems, and this page should be able to demonstrate that rather than only
+  assert it.
+
+  Count them by eye in a browser: a picture with nothing describing it, a text
+  box with no visible label, a heading that jumps a level, a button with only
+  an icon in it, a line of washed-out grey text, and -- invisibly -- no
+  language set on the page itself.
+
+  NOTE the <html> tag below has no lang attribute. That is FAULT 6, and it has
+  to be an omission rather than something added, which is exactly why it is
+  the easiest of the six to miss.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>A deliberately broken page</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #ffffff; }
+    .faded { color: #999999; }   /* FAULT 5 lives here: #999 on white is about 2.85:1 */
+    button { font-size: 1rem; padding: 0.4rem 0.6rem; }
+    section { margin-block: 2rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>A deliberately broken page</h1>
+    <p>
+      Every fault on this page is planted. It exists so the scanner has
+      something to find that does not change underneath it.
+    </p>
+
+    <section>
+      <h2>1. A picture that says nothing</h2>
+      <!--
+        FAULT 1 -- rule: image-alt
+        No alt attribute at all. A screen reader has nothing to announce in
+        its place, so it falls back to the filename or just says "image".
+        Note this is NOT the same as alt="" , which is a valid way to say
+        "this picture is decorative, skip it".
+      -->
+      <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='80'%3E%3Crect width='160' height='80' fill='%234a6fa5'/%3E%3C/svg%3E" width="160" height="80">
+
+      <p>And, for contrast, one done properly:</p>
+      <img
+        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='80'%3E%3Crect width='160' height='80' fill='%232f6b4f'/%3E%3C/svg%3E"
+        width="160" height="80"
+        alt="A plain green rectangle, standing in for a photograph.">
+    </section>
+
+    <section>
+      <h2>2. A box with no label</h2>
+      <!--
+        FAULT 2 -- rule: label
+        No <label>, no aria-label, no title, no placeholder: nothing names this
+        field at all. A screen reader announces "edit text" and leaves the
+        person to guess what belongs in it.
+      -->
+      <input type="text" id="search-field">
+
+      <p>And one done properly:</p>
+      <label for="email-field">Email address</label>
+      <input type="email" id="email-field">
+    </section>
+
+    <section>
+      <!--
+        FAULT 3 -- rule: heading-order
+        This jumps from <h2> straight to <h4>. Someone navigating by headings
+        hears a level that was never opened, which reads as a missing section.
+        The text looks completely fine on screen, which is why this one gets
+        shipped so often.
+      -->
+      <h2>3. A heading level skipped</h2>
+      <h4>This should have been a heading 3</h4>
+      <p>Visually indistinguishable from correct. Structurally not.</p>
+    </section>
+
+    <section>
+      <h2>4. A button that is only a picture</h2>
+      <!--
+        FAULT 4 -- rule: button-name
+        The icon is hidden from assistive technology, correctly, because it is
+        decoration. But nothing replaces it, so the button has no name at all
+        and is announced as just "button".
+      -->
+      <button type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M2 8h12M8 2v12" stroke="currentColor" stroke-width="2" fill="none"></path>
+        </svg>
+      </button>
+
+      <p>And one done properly:</p>
+      <button type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path d="M2 8h12M8 2v12" stroke="currentColor" stroke-width="2" fill="none"></path>
+        </svg>
+        Add item
+      </button>
+    </section>
+
+    <section>
+      <h2>5. Text too faint to read</h2>
+      <!--
+        FAULT 5 -- rule: color-contrast
+        #999999 on #ffffff is roughly 2.85:1. WCAG AA asks for 4.5:1 on body
+        text. This is the single most common real-world failure, and it is
+        caused by a designer liking how it looks.
+
+        This rule is also the reason a scan cannot skip stylesheets: contrast
+        cannot be judged from HTML alone.
+      -->
+      <p class="faded">
+        This paragraph is grey on white. It is legible on a good monitor in a
+        dark room, and not legible in sunlight, at a glance, or by a great many
+        people in ordinary conditions.
+      </p>
+      <p>This paragraph is near-black on white, at about 16.9:1.</p>
+    </section>
+
+    <section>
+      <h2>6. The one you cannot see</h2>
+      <p>
+        FAULT 6 -- rule: html-has-lang. The page never says what language it is
+        written in, so a screen reader reads English with whatever accent it
+        was last set to. Look at the very first tag of this file: there is no
+        lang attribute to find.
+      </p>
+    </section>
+
+    <section>
+      <h2>7. The one the scanner misses</h2>
+      <!--
+        BLIND SPOT -- no rule fires here, and that is the point.
+
+        This field is named only by its placeholder. axe-core treats a
+        placeholder as a valid accessible name and PASSES the `label` rule on
+        it outright -- not a warning, not an "incomplete", a clean pass. It is
+        right about the specification and wrong about the person: placeholder
+        text disappears the instant you start typing, so anyone who pauses
+        mid-form has lost the only thing telling them what the box was for,
+        and its grey-on-white styling usually fails contrast as well.
+
+        Found while writing this fixture, when the planted `label` fault did
+        not show up and the first instinct was to assume the scanner was
+        broken. Kept because an accessibility tool should be able to show its
+        own limits, and test_scanner.py asserts this stays unreported -- so if
+        a future axe-core starts catching it, we find out from a failing test
+        instead of never noticing.
+      -->
+      <label for="postcode-field">Postcode</label>
+      <input type="text" id="postcode-field">
+
+      <p>
+        The field below has no label element at all. It is named only by the
+        grey word inside it, which vanishes as soon as you type. The scanner
+        reports nothing about it.
+      </p>
+      <input type="text" id="placeholder-only-field" placeholder="Date of birth">
+    </section>
+  </main>
+</body>
+</html>
