@@ -55,33 +55,33 @@ download later is roughly one task; adding history is four or five.
 
 ## Phase 0 — Decisions and the shared contract
 
-- [ ] **0.1 Create the repo skeleton** — `frontend/` and `backend/` folders, a
+- [x] **0.1 Create the repo skeleton** — `frontend/` and `backend/` folders, a
   root `.gitignore` (Python `__pycache__`, `.venv`, `node_modules`, `.env`,
   `dist`), and a `README.md` with the one-paragraph description. ~30 min
   **Done when:** `git status` is clean and `.env` is proven ignored — create a
   dummy one and confirm git does not offer to commit it.
 
-- [ ] **0.2 Start DECISIONS.md** — seed it with the six decisions in the table
+- [x] **0.2 Start DECISIONS.md** — seed it with the six decisions in the table
   above, one dated entry each: what was decided, and *why*. For a portfolio
   piece this file is evidence, not admin — a reviewer reading your reasoning
   learns more about you than the feature list does. ~30 min
   **Done when:** `DECISIONS.md` has six dated entries, each with a stated
   reason.
 
-- [ ] **0.3 Write down what "finished" means** — in `README.md` or
+- [x] **0.3 Write down what "finished" means** — in `README.md` or
   `docs/scope.md`: who it's for, and the checkable list of what v1 must do.
   Also the three things it deliberately won't do. Scope you haven't written
   down is scope that grows. ~30 min
   **Done when:** the file states the audience in one sentence and lists at
   least six checkable conditions for v1 being done.
 
-- [ ] **0.4 Practise the branch-and-PR loop once** — on a trivial change (a
+- [x] **0.4 Practise the branch-and-PR loop once** — on a trivial change (a
   README typo): branch, commit, push, open a PR, then **stop without merging**.
   Learn the workflow on something harmless. ~30 min
   **Done when:** an open PR exists on GitHub that you have deliberately not
   merged.
 
-- [ ] **0.5 Write the API contract** — in `docs/api-contract.md`, by hand, no
+- [x] **0.5 Write the API contract** — in `docs/api-contract.md`, by hand, no
   code. The request (`{ "url": "..." }`) and the exact response. Per issue:
   rule id, severity, element selector, the offending HTML, the plain-language
   explanation, **the corrected snippet**, and **a list of the assumptions
