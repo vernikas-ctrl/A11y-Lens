@@ -144,23 +144,35 @@ method in `DECISIONS.md`.
   **Done when:** `pytest` runs from a clean terminal and reports 1 passed.
   *4 passed. Run with `cd backend && .venv/Scripts/python.exe -m pytest`.*
 
-- [ ] **2.3 Configuration from .env** — settings (API key, access code,
+- [x] **2.3 Configuration from .env** — settings (API key, access code,
   allowed origins, timeouts, daily spend cap) read from environment variables,
   with a committed `.env.example` listing every key and **no real values**.
   ~45 min
   **Done when:** the app starts with your `.env`, fails with a clear message
   when a required key is missing, and `.env.example` lists every key used.
+  *All three verified. Secrets are `SecretStr`, so printing or logging a
+  settings object shows `**********`. Two tests compare `.env.example` against
+  the settings class in both directions, so documentation drift fails the
+  build rather than surfacing at deploy time.*
 
-- [ ] **2.4 Enable CORS** — browsers block a page on one domain from calling an
+- [x] **2.4 Enable CORS** — browsers block a page on one domain from calling an
   API on another unless the API allows it. Read allowed origins from config,
   never hard-coded. ~30 min
   **Done when:** a `fetch()` from `localhost:5173` to `localhost:8000`
   succeeds with no CORS error in the browser console.
+  *Verified in a real browser, both ways: the fetch succeeds from
+  `localhost:5173` and the same page is refused from `127.0.0.1:5173`, which
+  is a different origin. `X-Access-Code` is in `allow_headers`, so Phase 6's
+  preflight will work.*
 
-- [ ] **2.5 One error shape everywhere** — matching the contract from 0.5,
+- [x] **2.5 One error shape everywhere** — matching the contract from 0.5,
   applied to every failure, plus request logging. ~45 min
   **Done when:** requesting a route that doesn't exist returns your error
   shape, not FastAPI's default.
+  *404 and 405 both return `{"error": {...}}` over real HTTP. Needed two new
+  contract codes (`not_found`, `method_not_allowed`) — see `DECISIONS.md`.
+  Unexpected failures return `detail: null` plus a reference id that also
+  appears in the server log.*
 
 ---
 
