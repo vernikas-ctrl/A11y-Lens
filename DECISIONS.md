@@ -333,3 +333,72 @@ blocked, and the proper fix is a proxy layer that would cost more than the rest
 of Phase 3 put together. **If this app ever ran inside a network with anything
 worth reaching, this decision would have to be revisited** — the reason it is
 tolerable is that there is nothing interesting next to it.
+
+---
+
+## 2026-11-02 — axe-core lives in the repo, and the scanner is async
+
+**Decided:** three things about how the scanner is built, all of which would
+have been expensive to change later.
+
+**1. axe-core 4.14.0 is committed to the repo** (`backend/app/vendor/axe-core/`,
+652KB, MPL-2.0, licence included) rather than fetched from a CDN at scan time.
+Phase 1's spike pulled it from jsdelivr, which is fine for a throwaway script
+and wrong for the real thing: every scan would depend on someone else's server
+being up at the moment a user clicks the button, and would spend part of its
+time downloading 650KB that never changes. Vendoring also means the test suite
+runs with no internet. *Cost:* updating axe is now a manual act. That is
+arguably the point — an axe update changes what the scanner finds, so it should
+be a decision with a test run attached, not something that happens silently
+between two scans.
+
+**2. The scanner is written against Playwright's async API.** Playwright's
+synchronous API cannot be called from inside a running event loop, which is
+exactly what FastAPI is. Task 4.6 puts one browser behind the whole server, so
+the browser has to live in the server's own loop. Writing it synchronously now
+would mean rewriting every line of it at 4.6. *Cost:* the code is denser to
+read, so it carries more comment than it otherwise would.
+
+**3. The scanner does not check its own URLs.** `app.url_safety` is applied by
+the endpoint (task 4.7), not by `app.scanner`. This looks like a hole and is
+not: `check_url` refuses `file://` and private addresses, correctly, and the
+test fixture is a local file — so a scanner that policed its own input could
+never be tested against a page we control, and the tests would have to point at
+a real website that can be redesigned without warning. Enforcing the check
+once, at the front door, keeps it in one place and keeps the scanner testable.
+*Cost:* a future second caller of the scanner could forget the check. Guarded
+by a test on the endpoint asserting the check is applied there.
+
+---
+
+## 2026-11-02 — The fixture carries a fault the scanner cannot see
+
+**Decided:** `backend/tests/fixtures/broken.html` contains a seventh fault that
+axe-core does not report, documented as a blind spot, with a test asserting it
+stays unreported.
+
+**How it was found.** The fixture was built with six planted faults and the
+first scan found five. The missing one was the unlabelled form field — and the
+reason was not a scanner bug. The field had `placeholder="Search"` and nothing
+else, and **axe-core treats a placeholder as a valid accessible name and passes
+the rule outright.** Not a warning, not an "incomplete" result: a clean pass,
+confirmed by querying axe about that one element directly.
+
+axe is right about the specification and wrong about the person. Placeholder
+text disappears the instant someone starts typing, so anyone who pauses
+mid-form has lost the only thing that said what the box was for — and its
+usual grey-on-white styling tends to fail contrast as well.
+
+**Why it stayed in.** The README and the empty-results screen (task 8.9) both
+claim automated tools catch roughly a third of real accessibility problems.
+This page can now *demonstrate* that instead of only asserting it, with a
+concrete example, on the one page a reviewer is most likely to read.
+
+**Cost:** a test that asserts something is *not* found, which is a shape of
+test that usually ages badly. Accepted because it is the only way the gap stays
+honest: if a future axe-core starts catching it, the test fails and says so,
+rather than the blind spot quietly closing while the README keeps claiming it.
+
+**The first instinct was that the scanner was broken.** Worth recording, because
+it is the same instinct that would have led to deleting the planted fault and
+never finding out why.
