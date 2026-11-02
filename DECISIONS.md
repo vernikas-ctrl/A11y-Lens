@@ -123,3 +123,24 @@ one commit to one task. Still using separate commits per task to keep some of
 that traceability.
 
 **Note:** Pull requests are still never merged without approval.
+
+---
+
+## 2026-11-02 — Python 3.14, pinned in a .python-version file
+
+**Decided:** The backend runs Python 3.14, not the 3.12 originally written in
+`CLAUDE.md`. `CLAUDE.md` has been updated to match.
+
+**Why:** 3.14 was the only version installed, and it is also Render's own
+default for new services, so it needed no install and no deviation from the
+host. Render supports any released version from 3.7.3 onward, so 3.12 was
+equally available — it just had no advantage. Playwright 1.64.1 and greenlet
+3.5.6 both installed cleanly on 3.14.
+
+**Cost:** None found. The risk considered was that a new Python might lack
+compiled wheels for Playwright's dependencies; it did not.
+
+**The part that actually matters:** local and Render must run the *same*
+version. A `.python-version` file at the repo root pins it, so Render cannot
+silently pick something else later. "Works on my machine, fails on deploy" is
+nearly always this.

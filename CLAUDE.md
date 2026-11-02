@@ -5,10 +5,10 @@ Claude API explains issues and suggests code fixes as JSON.
 
 ## Stack
 - frontend/: React + TypeScript + Tailwind + Vite (deploy: Vercel)
-- backend/: Python 3.12 + FastAPI + Playwright (deploy: Render)
+- backend/: Python 3.14 + FastAPI + Playwright (deploy: Render)
 
 ## Rules
-- Work in small steps. One feature per branch, one PR per feature.
+- Work in small steps. Related tasks may share a branch and PR.
 - Always plan first and wait for my approval before writing code.
 - Every feature gets tests. Run all tests before saying a task is done.
 - Never put API keys in code. Use .env and keep .env.example updated.

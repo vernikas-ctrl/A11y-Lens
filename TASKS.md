@@ -101,7 +101,7 @@ might be fine or it might get killed mid-scan, and **nobody knows until it's
 tested**. Finding out now costs an hour; finding out in Phase 10 costs a
 rebuild.
 
-- [ ] **1.1 Launch a browser locally** — a standalone script: open headless
+- [x] **1.1 Launch a browser locally** — a standalone script: open headless
   Chromium, visit a URL, print the page title. ~45 min
   **Done when:** running the script prints the real title of `example.com`.
 
