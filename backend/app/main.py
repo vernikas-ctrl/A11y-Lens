@@ -1,8 +1,11 @@
 """The FastAPI application.
 
 Phase 2 complete: the health check, configuration validated at startup, CORS,
-and one error shape for every failure. Still to come: URL safety in Phase 3,
-and the scan endpoint in Phase 4.
+and one error shape for every failure.
+
+Phase 3 added `app.url_safety`, which decides whether a URL may be fetched. It
+is deliberately not wired in here yet: there is nothing that fetches anything
+until the scan endpoint arrives in task 4.7, and that is where it gets called.
 
 The health check was built first because every later task needs a way to ask
 "is the server up?" that does not depend on anything else working.

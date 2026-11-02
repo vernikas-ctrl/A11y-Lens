@@ -275,3 +275,61 @@ trade: the person who hits this can fix it in five seconds once they know.
 **Worth keeping in mind for Phase 10:** this is the same class of bug as
 deploying with the Vercel preview URL missing from the list, where the symptom
 is again an unexplained fetch failure rather than anything that names CORS.
+
+---
+
+## 2026-11-02 — The DNS-rebinding gap is documented, not closed
+
+**Decided:** `check_url` resolves the hostname and refuses private addresses,
+and that check is known to have a hole. The hole is written down here, narrowed
+in two places, and deliberately not closed.
+
+**The gap, plainly.** The safety check resolves the hostname and decides the
+address is public. Playwright then opens the URL — and resolves the hostname
+*again*. Two lookups, a moment apart. Someone who controls the DNS for their
+own domain can answer the first lookup with a public address and the second
+with `127.0.0.1`, and the browser connects somewhere the check never saw. It is
+called **DNS rebinding**: the name stays the same, the address underneath it
+moves. Setting a TTL of 0 makes the window between the two lookups as small as
+the attacker likes.
+
+**Why closing it properly is not a small job.** The real fix is to resolve the
+name once and force the connection to *that exact address* — "pinning". With
+Playwright that means routing the browser through a proxy we control or
+intercepting at the socket level, and then keeping the original `Host` header
+and SNI so TLS and virtual hosting still work. And that is only the top-level
+page. A page can embed `<img src="http://169.254.169.254/latest/meta-data/">`,
+and every sub-resource and every redirect does its own lookup, so pinning the
+first URL alone would not be complete even once built.
+
+**What is actually in place:**
+
+1. **The check catches the realistic case.** Rebinding needs an attacker who
+   owns a domain and runs a custom DNS server. Resolving the hostname already
+   stops the thing people actually try — a typed private address, or a public
+   name that simply points at a private one. `localtest.me` resolved to `::1`
+   during this task, live.
+2. **Phase 6's access code means it is not drive-by.** Scanning needs a shared
+   code, so this cannot be found by a crawler. That is obscurity, not security,
+   but it does change who could reach it.
+3. **A follow-up with a real effect, in Phase 4.** Playwright's `page.route()`
+   sees every request a page makes, so each one can be re-checked and aborted
+   before it goes out. That covers sub-resources and redirects, which pinning
+   the top-level URL would not, and it narrows the window to each individual
+   request. It does not eliminate it — `route` sees the URL, not the address
+   the browser is about to connect to.
+
+**What it would cost an attacker who won the race.** Not much, and that is part
+of why this is an acceptable risk here. The response carries axe-core's
+findings and up to 500 characters of the offending element's HTML per issue —
+so fragments of an internal page could leak, but not arbitrary file reads and
+not whole responses. On AWS, the current metadata service also needs a `PUT`
+with a token header, which a page navigation does not send; that is a genuine
+second line of defence, but only on hosts that have it.
+
+**Cost of this decision:** a known, written-down hole in a security control.
+Accepted because the exposure is bounded, the realistic attack is already
+blocked, and the proper fix is a proxy layer that would cost more than the rest
+of Phase 3 put together. **If this app ever ran inside a network with anything
+worth reaching, this decision would have to be revisited** — the reason it is
+tolerable is that there is nothing interesting next to it.

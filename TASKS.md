@@ -178,12 +178,16 @@ method in `DECISIONS.md`.
 
 ## Phase 3 — URL safety (before anything fetches a URL)
 
-- [ ] **3.1 Validate the URL's shape** — scheme must be `http` or `https`,
+- [x] **3.1 Validate the URL's shape** — scheme must be `http` or `https`,
   must have a hostname; reject everything else. ~45 min
   **Done when:** empty, `file:///etc/passwd`, `not a url` and
   `javascript:alert(1)` all return your "invalid URL" error.
+  *All four verified over real HTTP. Schemes are an allow-list, so anything
+  not yet thought of is refused by default. Also refuses credentials in the
+  URL: `http://expected.com@evil.example/` connects to `evil.example` while a
+  human reads `expected.com`.*
 
-- [ ] **3.2 Block private and internal addresses** — resolve the hostname to an
+- [x] **3.2 Block private and internal addresses** — resolve the hostname to an
   IP, then reject loopback (`127.0.0.1`, `::1`), private ranges (`10.x`,
   `192.168.x`, `172.16–31.x`), link-local (`169.254.x`, which covers the cloud
   metadata address) and reserved ranges. **Resolve the name rather than
@@ -191,19 +195,30 @@ method in `DECISIONS.md`.
   `127.0.0.1`. ~1 hr
   **Done when:** `http://localhost:8000/health`, `http://169.254.169.254/` and
   `http://10.0.0.1/` are each refused with a "blocked address" error.
+  *All three verified over real HTTP, and `localtest.me` really did resolve to
+  `::1`. Every address a name answers with is checked, not just the first.
+  Needed two separate rules: `100.64.0.0/10` (carrier-grade NAT) is not
+  `is_private` on this Python, and multicast `224.0.0.1` reports as globally
+  reachable — either check alone lets one of them through.*
 
-- [ ] **3.3 Tests for the SSRF rules** — one parametrised test covering every
+- [x] **3.3 Tests for the SSRF rules** — one parametrised test covering every
   case from 3.1 and 3.2, blocked and allowed. The suite you'll be gladdest to
   have. ~45 min
   **Done when:** `pytest` covers at least 12 URL cases and all pass.
+  *54 cases; 92 tests in the suite overall. The hostname cases use an injected
+  resolver so they never depend on the internet. Confirmed the tests bite by
+  breaking the code four ways and checking each break failed the test written
+  for it.*
 
-- [ ] **3.4 Note the DNS-rebinding gap** — a hostname can pass your check and
+- [x] **3.4 Note the DNS-rebinding gap** — a hostname can pass your check and
   resolve to a private IP microseconds later, when the browser actually
   connects. Fully closing it is out of scope; write the gap and your chosen
   mitigation into `DECISIONS.md`. For a portfolio piece, a documented known
   limitation reads as competence. ~30 min
   **Done when:** `DECISIONS.md` explains the gap in your own words and names
   what you chose to do about it.
+  *Written down and accepted, with the one mitigation that has a real effect
+  pushed into task 4.7.*
 
 ---
 
@@ -249,6 +264,13 @@ method in `DECISIONS.md`.
   the normalised result. No Claude yet. ~45 min
   **Done when:** posting `{"url": "https://example.com"}` returns real
   violations, and `{"url": "http://localhost"}` returns the blocked error.
+  **Also re-check every request the page makes** via Playwright's
+  `page.route()`, aborting any that points somewhere private. Task 3.1's check
+  only sees the URL you typed, so a page embedding
+  `<img src="http://169.254.169.254/latest/meta-data/">` would sail past it —
+  and this is the narrowing named in the DNS-rebinding entry in
+  `DECISIONS.md`. Add a test that a page requesting a private address has that
+  request blocked.
 
 ---
 
