@@ -1,0 +1,14 @@
+# Local development: everything in requirements.txt, plus tests and the
+# diagnostic scripts in scripts/. Kept separate so the deploy image does not
+# ship a test runner.
+#
+#   .venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest==9.2.0
+# Starlette's TestClient now wants httpx2; plain httpx raises a deprecation
+# warning and is not needed.
+httpx2==2.16.0
+# scripts/memory_check.py only.
+psutil==7.2.2

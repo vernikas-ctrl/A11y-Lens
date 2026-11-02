@@ -128,16 +128,21 @@ method in `DECISIONS.md`.
 
 ## Phase 2 — Backend skeleton
 
-- [ ] **2.1 Python 3.14 environment and FastAPI** — virtual environment,
+- [x] **2.1 Python 3.14 environment and FastAPI** — virtual environment,
   `requirements.txt`, FastAPI + uvicorn, and `GET /health` returning
   `{"status": "ok"}`. ~45 min
   **Done when:** `uvicorn` runs locally and `localhost:8000/health` returns
   that JSON in your browser.
+  *Returns `{"status": "ok", "version": "0.1.0"}` — the version field comes
+  from `docs/api-contract.md`, which outranks the summary written here.
+  Requirements are split into `requirements.txt` (what a deploy installs) and
+  `requirements-dev.txt` (tests and diagnostics).*
 
-- [ ] **2.2 Set up pytest and test /health** — the harness plus the first real
+- [x] **2.2 Set up pytest and test /health** — the harness plus the first real
   test. Second, not last: every later "Done when" leans on being able to run
   tests, and retrofitting a harness onto finished code is miserable. ~45 min
   **Done when:** `pytest` runs from a clean terminal and reports 1 passed.
+  *4 passed. Run with `cd backend && .venv/Scripts/python.exe -m pytest`.*
 
 - [ ] **2.3 Configuration from .env** — settings (API key, access code,
   allowed origins, timeouts, daily spend cap) read from environment variables,
