@@ -1,0 +1,33 @@
+# Secrets — never commit real values.
+# .env.example IS committed: it lists the keys with placeholder values.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Playwright
+playwright-report/
+test-results/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
