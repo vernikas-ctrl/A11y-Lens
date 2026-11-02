@@ -253,11 +253,17 @@ method in `DECISIONS.md`.
   14.10) and axe's `?application=axeAPI` stripped off the reference link. A
   test asserts the exact key set, so no axe field can leak through.*
 
-- [ ] **4.4 Timeouts and failure handling** — a page that never loads, a 404, a
+- [x] **4.4 Timeouts and failure handling** — a page that never loads, a 404, a
   redirect loop, a 20-second page, a domain that doesn't exist. Each gives a
   clear error, never a hang. ~1 hr
   **Done when:** scanning `https://this-domain-does-not-exist-9z8y.com`
   returns a readable error within your timeout.
+  *Every case mapped to a contract code — table in `DECISIONS.md`. A
+  connection that times out is reported as a timeout, not an unreachable
+  host, because one is worth retrying and the other is not. axe gets its own
+  time budget on top of the page load, so a huge DOM cannot hang a request. A
+  test plants a Windows file path inside a Chromium error and asserts it never
+  reaches the response.*
 
 - [x] **4.5 Tests for the scanner** — scan the local fixture, assert the known
   issues are found. Assert on **rule ids, not counts** — counts change when axe
@@ -271,13 +277,20 @@ method in `DECISIONS.md`.
   `pytest-asyncio`: the one real browser scan runs inside a module-scoped
   fixture and every test asserts on plain data.*
 
-- [ ] **4.6 Reuse the browser between scans** — launching Chromium per request
+- [x] **4.6 Reuse the browser between scans** — launching Chromium per request
   is slow and, on 512MB, risky. Start it once with the app, give each scan a
   fresh isolated context, shut down cleanly. ~1 hr
   **Done when:** the second scan is measurably faster than the first, and ten
   scans in a row don't grow memory without bound.
+  *Memory verified with `backend/scripts/scan_loop_check.py`: settles around
+  360MB, oscillates 358–412MB with no trend, 6 Chromium processes throughout,
+  back to 65MB after shutdown. **The first half of this "Done when" turned out
+  to be wrong** — on an already-running browser the first scan is no slower
+  than later ones, because the launch happened at app startup. The saving is
+  the launch itself. Tested as "the browser object is never replaced", which
+  fails the moment reuse is removed. Reasoning in `DECISIONS.md`.*
 
-- [ ] **4.7 Wire up POST /scan** — validate the URL (Phase 3), scan it, return
+- [x] **4.7 Wire up POST /scan** — validate the URL (Phase 3), scan it, return
   the normalised result. No Claude yet. ~45 min
   **Done when:** posting `{"url": "https://example.com"}` returns real
   violations, and `{"url": "http://localhost"}` returns the blocked error.
@@ -288,6 +301,13 @@ method in `DECISIONS.md`.
   and this is the narrowing named in the DNS-rebinding entry in
   `DECISIONS.md`. Add a test that a page requesting a private address has that
   request blocked.
+  *Both done and verified over real HTTP: `{"url":"https://example.com"}`
+  returns 9 real violations in 3.7s, `{"url":"http://localhost"}` returns the
+  blocked error. The request re-check aborts rather than failing the scan, so
+  one blocked image cannot lose a whole report. Eight URL cases prove the
+  safety check runs **before** the browser — they pass with no browser
+  running at all, so reaching the scanner would have produced a 500 rather
+  than the 400 they assert.*
 
 ---
 

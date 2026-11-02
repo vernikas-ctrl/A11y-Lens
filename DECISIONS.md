@@ -402,3 +402,101 @@ rather than the blind spot quietly closing while the README keeps claiming it.
 **The first instinct was that the scanner was broken.** Worth recording, because
 it is the same instinct that would have led to deleting the planted fault and
 never finding out why.
+
+---
+
+## 2026-11-02 — One browser for the whole server, and a "Done when" that was wrong
+
+**Decided:** Chromium is launched once, when the app starts, and every scan
+gets a fresh *context* inside it rather than a fresh browser.
+
+**Why.** Phase 1 measured Chromium's floor at about 321MB and several seconds
+for a page consisting of one heading. That is a cost that only needs paying
+once. Launching per request would also mean two browsers alive at the same
+moment whenever two requests overlap, which on a memory-limited host is how a
+process gets killed rather than merely slowed.
+
+A context is Playwright's word for a private browser profile: its own cookies,
+storage and cache. One per scan means two scans cannot see each other, which
+matters because the URLs come from strangers. The context is closed in a
+`finally`, so a failed scan releases its memory too.
+
+**The measurement, from `backend/scripts/scan_loop_check.py`, ten scans of
+`example.com`:**
+
+| | |
+|---|---|
+| Browser launched, before any scan | 212 MB |
+| After the first scan | 331 MB |
+| Oscillating across scans 2–10 | 358–412 MB, no trend |
+| Peak | 412 MB |
+| After the browser stops | 65 MB |
+| Chromium processes | 6, unchanged throughout |
+
+Memory rises once as caches fill and then moves up and down without climbing.
+A leak looks like roughly the same increase on every scan; this does not.
+
+**Task 4.6's stated "Done when" was wrong, and the measurement is what showed
+it.** It asked for the second scan to be measurably faster than the first. It
+is not: on an already-running browser the first scan took 0.84s and later
+scans averaged 0.75s, which is noise. The saving from reuse is **the browser
+launch**, which the first scan does not pay for either, because the app
+launched it at startup.
+
+So the test asserts the two things that are actually true and actually exact:
+the browser object is the same one for every scan (which fails immediately if
+reuse is removed — checked by removing it), and a warm scan costs less than
+starting a browser and scanning. The timing numbers live in the script, which
+prints them for a person to judge, rather than in a test that would invent a
+threshold and fail on a busy laptop.
+
+**Cost:** the browser is started eagerly at app startup, so the server takes
+about a second longer to become ready. Deliberate: the alternative is the
+first user paying for it on top of their own scan, and on a free tier that
+sleeps, that user is arriving at the worst possible moment anyway.
+
+---
+
+## 2026-11-02 — Every failure a scan can have, named
+
+**Decided:** the mapping from "something went wrong" to the contract's error
+codes, settled once in `app/scanner.py` rather than per call site.
+
+| What happened | Code | Status |
+|---|---|---|
+| Page never finished loading | `scan_timeout` | 504 |
+| axe itself did not finish in time | `scan_timeout` | 504 |
+| `net::ERR_TIMED_OUT`, `ERR_CONNECTION_TIMED_OUT` | `scan_timeout` | 504 |
+| Any other `net::` failure — no such domain, refused, bad certificate, redirect loop | `unreachable` | 502 |
+| Target returned 4xx or 5xx | `unreachable` | 502 |
+
+**Two judgement calls worth writing down.**
+
+A connection that *times out* is reported as a timeout and not as an
+unreachable host, even though both mean "no page". The person reading the
+message has to decide whether to try again, and those two answers differ.
+
+A target returning 404 or 500 is `unreachable`, which is arguable — an error
+page is still a page, and scanning it would produce findings. But someone who
+typed a URL expecting a page has not got one, and reporting on the
+accessibility of the error page answers a question they did not ask.
+`docs/api-contract.md` already settled this; the code follows it.
+
+**Nothing from the exception reaches the user.** Chromium's error text can
+carry local file paths, and these responses go to strangers. `detail` says
+what happened in plain words; the code is what the frontend branches on. There
+is a test that plants a Windows path in an error message and asserts it does
+not come back.
+
+**Also built here: the DNS-rebinding mitigation promised in Phase 3.** Every
+request the page makes — not just the URL that was typed — is re-checked, and
+aborted if it points somewhere private. That covers an embedded
+`<img src="http://169.254.169.254/latest/meta-data/">` and covers redirects,
+neither of which `check_url` can see. A blocked request is aborted rather than
+failing the scan: one blocked image should not lose the whole report.
+
+**Worth knowing for Phase 10:** the browser announces itself as headless
+Chrome. Some sites serve a challenge page or a block to headless browsers,
+which would arrive here as `unreachable` with nothing explaining why. Not hit
+yet, not worked around, and worth remembering when the first real-world scan
+fails for no visible reason.
