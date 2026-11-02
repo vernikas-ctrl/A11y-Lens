@@ -24,10 +24,20 @@ browser across requests, so the browser has to live in the server's own loop.
 Writing it synchronously now would mean rewriting it then.
 """
 
+import asyncio
+import logging
 import re
+import time
+from collections.abc import Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypedDict
 from urllib.parse import urlsplit, urlunsplit
+
+from app.errors import ApiError
+from app.url_safety import check_url, resolve_hostname
+
+logger = logging.getLogger("a11y_lens")
 
 # Pinned deliberately, and vendored rather than fetched from a CDN -- see
 # vendor/axe-core/README.md. Both must be changed together.
@@ -256,3 +266,226 @@ def summarise(issues: list[Issue]) -> dict[str, int]:
             summary[issue["severity"]] += 1
     summary["total"] = len(issues)
     return summary
+
+
+# --- Tasks 4.4 and 4.6: one browser, many scans, every failure named -------
+
+
+class ScannerNotStarted(RuntimeError):
+    """A scan was attempted before start(). A programming mistake rather than
+    a user one, so deliberately not an ApiError."""
+
+
+# Chromium reports network problems as `net::ERR_SOMETHING` inside an
+# otherwise unhelpful exception message. A connection that times out is a
+# timeout and not an unreachable host: the difference matters to the person
+# reading the message, because one is worth retrying and the other is not.
+# Anything else beginning `net::` is treated as unreachable.
+TIMEOUT_NET_ERRORS = ("ERR_TIMED_OUT", "ERR_CONNECTION_TIMED_OUT")
+
+
+class Report(TypedDict):
+    """A whole scan, as docs/api-contract.md sections 2.1 and 2.3 define it."""
+
+    url: str
+    page_title: str | None
+    scanned_at: str
+    scan_duration_ms: int
+    explanations_available: bool
+    explanations_unavailable_reason: str
+    summary: dict[str, int]
+    issues: list[Issue]
+
+
+class Scanner:
+    """Holds one browser for the lifetime of the server.
+
+    Launching Chromium is the expensive part of a scan by a wide margin.
+    Phase 1 measured a floor of about 321MB and several seconds for a page
+    consisting of one heading and one paragraph, so doing it per request would
+    make every scan pay a cost that only needs paying once -- and on a
+    memory-limited host it is also how two browsers end up alive at once.
+
+    Each scan still gets a **fresh context**, which is Playwright's word for a
+    private browser profile: its own cookies, storage and cache. Two scans
+    therefore cannot see each other, which matters because the URLs come from
+    strangers.
+    """
+
+    def __init__(self) -> None:
+        self._playwright = None
+        self._browser = None
+
+    @property
+    def is_running(self) -> bool:
+        return self._browser is not None
+
+    async def start(self) -> None:
+        """Launch the browser. Called once, from the app's lifespan."""
+        if self.is_running:
+            return
+        from playwright.async_api import async_playwright
+
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.launch()
+        logger.info("browser started")
+
+    async def stop(self) -> None:
+        """Shut down cleanly, so no Chromium process is left behind."""
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright is not None:
+            await self._playwright.stop()
+            self._playwright = None
+        logger.info("browser stopped")
+
+    async def scan(self, url: str, timeout_ms: int) -> Report:
+        """Load the page, run axe, and return a contract-shaped report.
+
+        `url` is expected to have been through `app.url_safety.check_url`
+        already -- see this module's docstring for why that is the endpoint's
+        job and not this one's.
+        """
+        if not self.is_running:
+            raise ScannerNotStarted("Scanner.start() was never called")
+
+        started = time.monotonic()
+        context = await self._browser.new_context()
+        try:
+            page = await context.new_page()
+            await _block_requests_to_private_addresses(page)
+
+            response = await _goto(page, url, timeout_ms)
+            _reject_unsuccessful_response(response)
+
+            # The axe run gets its own budget. page.goto has a timeout of its
+            # own, but axe can take a long time on a very large DOM, and a
+            # request that never returns is worse than one that fails.
+            async with asyncio.timeout(timeout_ms / 1000):
+                violations = await collect_violations(page)
+                title = await page.title()
+                # After redirects, which is what the contract asks for.
+                final_url = page.url
+        except TimeoutError as exc:
+            # asyncio.timeout raises the builtin TimeoutError, not
+            # Playwright's. Both are the same thing to the person waiting.
+            raise ApiError(
+                "scan_timeout",
+                detail="The accessibility check did not finish in time.",
+            ) from exc
+        finally:
+            # Always, including on failure: a context left open holds memory
+            # for as long as the server runs.
+            await context.close()
+
+        issues = normalise_violations(violations)
+        return Report(
+            url=final_url,
+            # A page with no <title> is itself an accessibility problem, so
+            # null here is information rather than a gap.
+            page_title=title or None,
+            scanned_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            scan_duration_ms=int((time.monotonic() - started) * 1000),
+            # Phase 5 is what makes this true. Until then the contract's
+            # degraded-success path (section 2.3) is the honest description of
+            # what comes back: real findings, no explanations.
+            explanations_available=False,
+            explanations_unavailable_reason="api_unavailable",
+            summary=summarise(issues),
+            issues=issues,
+        )
+
+
+async def _goto(page, url: str, timeout_ms: int):
+    """Navigate, turning Chromium's failures into contract error codes.
+
+    `wait_until="load"` rather than `"domcontentloaded"`: Phase 1 measured
+    that the lighter option saves little memory and changes what axe finds,
+    because contrast cannot be judged without stylesheets.
+    """
+    from playwright.async_api import Error as PlaywrightError
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    try:
+        return await page.goto(url, wait_until="load", timeout=timeout_ms)
+    except PlaywrightTimeoutError as exc:
+        seconds = max(1, timeout_ms // 1000)
+        raise ApiError(
+            "scan_timeout",
+            detail=f"The page did not finish loading within {seconds} seconds.",
+        ) from exc
+    except PlaywrightError as exc:
+        if any(code in str(exc) for code in TIMEOUT_NET_ERRORS):
+            raise ApiError(
+                "scan_timeout", detail="The connection to that page timed out."
+            ) from exc
+        # Everything else Chromium refuses to load: a name that does not
+        # resolve, a refused connection, a bad certificate. `detail` describes
+        # the target rather than quoting the exception, which can carry local
+        # paths and internal hostnames.
+        raise ApiError(
+            "unreachable", detail="The browser could not open that page."
+        ) from exc
+
+
+def _reject_unsuccessful_response(response) -> None:
+    """A 404 or a 500 from the target is `unreachable`, per the contract.
+
+    Arguable: an error page is still a page, and scanning it would produce
+    findings. But someone who typed a URL expecting a page has not got one,
+    and reporting on its accessibility would answer a question they did not
+    ask. docs/api-contract.md settles it -- 4xx/5xx from the target is
+    `unreachable`.
+    """
+    if response is None:
+        raise ApiError("unreachable", detail="That page returned nothing at all.")
+    if response.status >= 400:
+        raise ApiError(
+            "unreachable", detail=f"That page returned HTTP {response.status}."
+        )
+
+
+async def _block_requests_to_private_addresses(page) -> None:
+    """Re-check every request the page makes, not only the URL that was typed.
+
+    This is the mitigation promised in the DNS-rebinding entry in
+    DECISIONS.md. `check_url` sees one address; a page can embed
+    `<img src="http://169.254.169.254/latest/meta-data/">`, and every
+    redirect and sub-resource does its own lookup. This handler sees all of
+    them.
+
+    Non-http schemes pass straight through: `data:`, `blob:` and `file:` go
+    nowhere near the network, and the test fixture is a local file. Chromium
+    already refuses to load `file:` sub-resources from an http page, so this
+    is not the hole it looks like.
+
+    The resolving happens in a worker thread, because `check_url` blocks and
+    this handler runs on the same event loop that is driving the browser. The
+    cache means a page requesting fifty things from one host resolves it once.
+    """
+    resolver_cache: dict[tuple[str, int | None], Sequence[str]] = {}
+
+    def cached_resolver(hostname: str, port: int | None) -> Sequence[str]:
+        key = (hostname, port)
+        if key not in resolver_cache:
+            resolver_cache[key] = resolve_hostname(hostname, port)
+        return resolver_cache[key]
+
+    async def handle(route, request) -> None:
+        if not request.url.lower().startswith(("http://", "https://")):
+            await route.continue_()
+            return
+        try:
+            await asyncio.to_thread(check_url, request.url, cached_resolver)
+        except ApiError:
+            # Aborted rather than failing the scan: one blocked image should
+            # not lose the whole report. The page renders without it, and axe
+            # reports on what actually loaded. Logged without the URL, which
+            # came from the scanned page and not from us.
+            logger.warning("blocked a request made by the scanned page")
+            await route.abort()
+            return
+        await route.continue_()
+
+    await page.route("**/*", handle)
