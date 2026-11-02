@@ -155,16 +155,24 @@ method in `DECISIONS.md`.
   the settings class in both directions, so documentation drift fails the
   build rather than surfacing at deploy time.*
 
-- [ ] **2.4 Enable CORS** — browsers block a page on one domain from calling an
+- [x] **2.4 Enable CORS** — browsers block a page on one domain from calling an
   API on another unless the API allows it. Read allowed origins from config,
   never hard-coded. ~30 min
   **Done when:** a `fetch()` from `localhost:5173` to `localhost:8000`
   succeeds with no CORS error in the browser console.
+  *Verified in a real browser, both ways: the fetch succeeds from
+  `localhost:5173` and the same page is refused from `127.0.0.1:5173`, which
+  is a different origin. `X-Access-Code` is in `allow_headers`, so Phase 6's
+  preflight will work.*
 
-- [ ] **2.5 One error shape everywhere** — matching the contract from 0.5,
+- [x] **2.5 One error shape everywhere** — matching the contract from 0.5,
   applied to every failure, plus request logging. ~45 min
   **Done when:** requesting a route that doesn't exist returns your error
   shape, not FastAPI's default.
+  *404 and 405 both return `{"error": {...}}` over real HTTP. Needed two new
+  contract codes (`not_found`, `method_not_allowed`) — see `DECISIONS.md`.
+  Unexpected failures return `detail: null` plus a reference id that also
+  appears in the server log.*
 
 ---
 

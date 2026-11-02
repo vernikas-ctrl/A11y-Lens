@@ -217,3 +217,61 @@ Run has a generous free tier but requires a card.
 **Why deferring is safe:** Phases 2–9 are thirty tasks that run entirely on a
 laptop, and task 8.1's demo page renders a saved report with the backend
 switched off — so the public link works whether or not a backend is deployed.
+
+---
+
+## 2026-11-02 — Two error codes added to the API contract
+
+**Decided:** `not_found` (404) and `method_not_allowed` (405) were added to the
+error-code table in `docs/api-contract.md`, taking it from eight codes to ten.
+
+**Why:** The original eight all describe ways a *scan* can fail. They do not
+cover "you asked for a route that does not exist", which FastAPI answers by
+itself in its own format — `{"detail": "Not Found"}`. Contract rule 1 says the
+frontend branches on `error.code` and never on `error.message`, and that only
+holds if every response a client can receive carries a code. Two formats would
+mean two parsers in the frontend, and the second one would be the one with the
+bug.
+
+**Cost:** The contract is meant to be stable, and widening it two tasks after
+writing it is not free. The alternative was worse: mapping a 404 onto one of
+the scanning codes would have been a lie, and leaving FastAPI's shape in place
+would have broken the rule the whole contract rests on. Recorded here because
+`docs/api-contract.md` says the code is wrong until that file is *deliberately*
+changed — this is the deliberate change.
+
+**Also decided:** `detail` is `null` for unexpected failures. An exception
+message can contain file paths, query fragments or key material, and an error
+response goes to a stranger on the internet. The real cause is logged with a
+short reference id that also appears in the response, so a user can quote it
+and the log can be searched. A test asserts a planted fake key reaches the log
+and not the response.
+
+**And:** request logging records method, path, status and duration — never
+headers, never the query string. The access code travels in a header, and the
+quickest way to put a secret in a log file is to log all headers "just for
+debugging" and never remove it.
+
+---
+
+## 2026-11-02 — localhost and 127.0.0.1 are different origins
+
+**Decided:** `ALLOWED_ORIGINS` defaults to `http://localhost:5173` only, with
+the trap documented in `backend/.env.example` rather than worked around by
+listing both.
+
+**Why:** Found while verifying task 2.4 in a real browser. The identical page,
+served by the same server and calling the same API, succeeded from
+`http://localhost:5173` and failed from `http://127.0.0.1:5173` — a browser
+treats those as different origins. The failure surfaces as
+`TypeError: Failed to fetch` with no explanation of which rule was broken.
+
+**Cost:** Anyone who opens the frontend on `127.0.0.1` instead of `localhost`
+hits a confusing error. Listing both would prevent that, but it would also
+widen the production origin list by habit, and task 10.4 exists to narrow that
+list to exactly one domain. A comment in `.env.example` seemed the better
+trade: the person who hits this can fix it in five seconds once they know.
+
+**Worth keeping in mind for Phase 10:** this is the same class of bug as
+deploying with the Vercel preview URL missing from the list, where the symptom
+is again an unexplained fetch failure rather than anything that names CORS.

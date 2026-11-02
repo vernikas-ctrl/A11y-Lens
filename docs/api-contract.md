@@ -190,11 +190,19 @@ One shape for every failure, at every status code.
 | `invalid_url` | 400 | Not `http`/`https`, no hostname, unparseable | What a valid URL looks like |
 | `blocked_address` | 400 | Resolves to a private, loopback, link-local or reserved IP | That this is deliberate, not a bug |
 | `unauthorized` | 401 | Missing or wrong `X-Access-Code` | That a code is needed, and the demo page is available without one |
+| `not_found` | 404 | No such route on this API | That there is nothing at that address |
+| `method_not_allowed` | 405 | Route exists, wrong HTTP method | That the address does not take this kind of request |
 | `rate_limited` | 429 | Too many requests from one address | How long to wait |
 | `daily_limit_reached` | 429 | Global daily scan ceiling reached | That it resets tomorrow |
 | `unreachable` | 502 | DNS failure, connection refused, TLS failure, 4xx/5xx from the target | That the page, not A11y-Lens, is the problem |
 | `scan_timeout` | 504 | The page did not finish loading in time | That the page may be unusually slow |
 | `internal_error` | 500 | Anything unanticipated | An apology and nothing technical |
+
+**`not_found` and `method_not_allowed` were added in task 2.5.** The original
+eight codes covered scanning failures but not "you asked for a route that does
+not exist", which a web framework answers by default in its own format. Since
+rule 1 says the frontend branches on `code` and never on `message`, every
+response that can reach a client needs a code — including the boring ones.
 
 **`daily_limit_reached` appears in two places on purpose.** If the cap is hit
 *before* a scan starts, it is this 429 error. If it is hit *after* axe-core has
