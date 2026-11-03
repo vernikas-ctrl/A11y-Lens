@@ -28,6 +28,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app import main
+from app.config import get_settings
 from app.errors import ApiError
 from app.main import app
 from app.scanner import (
@@ -43,6 +44,11 @@ FIXTURE = Path(__file__).parent / "fixtures" / "broken.html"
 
 # No `with`, so no lifespan, so no browser. See the module docstring.
 client = TestClient(app)
+
+# Phase 6 put an access code in front of /scan, so every request here carries
+# one. Read from configuration rather than written out, so there is exactly one
+# place the test code lives (tests/conftest.py) and no literal to drift.
+CODE = {"X-Access-Code": get_settings().access_code.get_secret_value()}
 
 
 # --- Task 4.7: the safety check runs before anything is fetched -------------
@@ -69,7 +75,7 @@ def test_the_safety_check_runs_before_the_browser(url, expected_code):
     It is also why there is no browser running: reaching the scanner at all
     would produce a 500, not the 400 asserted here.
     """
-    response = client.post("/scan", json={"url": url})
+    response = client.post("/scan", json={"url": url}, headers=CODE)
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == expected_code
@@ -88,7 +94,7 @@ MALFORMED_BODIES = [
 def test_a_malformed_body_still_comes_back_in_the_contract_shape(body):
     """FastAPI answers a bad body with a 422 and its own format by default.
     app.errors maps it to invalid_url, so the frontend has one parser."""
-    response = client.post("/scan", json=body)
+    response = client.post("/scan", json=body, headers=CODE)
 
     assert response.status_code == 400
     error = response.json()["error"]
@@ -452,50 +458,6 @@ def test_a_blocked_request_does_not_fail_the_whole_scan():
 # against a public URL, not in a test suite that has to pass offline.
 
 
-def canned_report(issue_count: int = 2) -> Report:
-    """What `Scanner.scan` hands back: real findings, nothing explained."""
-    return {
-        "url": "https://example.com/",
-        "page_title": "Example Domain",
-        "scanned_at": "2026-11-03T12:00:00Z",
-        "scan_duration_ms": 900,
-        "explanations_available": False,
-        "explanations_unavailable_reason": "api_unavailable",
-        "summary": {
-            "critical": 0,
-            "serious": issue_count,
-            "moderate": 0,
-            "minor": 0,
-            "total": issue_count,
-        },
-        "issues": [
-            {
-                "id": f"image-alt-{index}",
-                "rule_id": "image-alt",
-                "severity": "serious",
-                "wcag": ["1.1.1"],
-                "reference_url": "https://dequeuniversity.com/rules/axe/4.14/image-alt",
-                "selector": f"main > img:nth-child({index + 1})",
-                "html": f'<img src="/picture-{index}.png">',
-                "explanation": None,
-                "fix": None,
-            }
-            for index in range(issue_count)
-        ],
-    }
-
-
-@pytest.fixture
-def stub_scanner(monkeypatch):
-    """Replace the browser with a canned report, leaving everything else real."""
-
-    async def fake_scan(url: str, timeout_ms: int) -> Report:
-        del url, timeout_ms
-        return canned_report()
-
-    monkeypatch.setattr(main.scanner, "scan", fake_scan)
-
-
 def test_a_scan_returns_findings_when_explanations_are_unavailable(stub_scanner):
     """Task 5.6's "done when", at the level of the HTTP response: when
     explanations cannot be had, the findings still come back and the body is
@@ -512,7 +474,7 @@ def test_a_scan_returns_findings_when_explanations_are_unavailable(stub_scanner)
     here; what stops the call is the missing client.)"""
     assert main.explainer.is_running is False
 
-    response = client.post("/scan", json={"url": "https://example.com"})
+    response = client.post("/scan", json={"url": "https://example.com"}, headers=CODE)
 
     assert response.status_code == 200
     body = response.json()
@@ -525,7 +487,7 @@ def test_a_scan_returns_findings_when_explanations_are_unavailable(stub_scanner)
 
 
 def test_the_degraded_body_has_exactly_the_contract_keys(stub_scanner):
-    response = client.post("/scan", json={"url": "https://example.com"})
+    response = client.post("/scan", json={"url": "https://example.com"}, headers=CODE)
     body = response.json()
 
     assert set(body) == {
@@ -562,7 +524,7 @@ def test_an_explained_body_omits_the_unavailable_reason_entirely(
 
     monkeypatch.setattr(main.explainer, "explain", fake_explain)
 
-    body = client.post("/scan", json={"url": "https://example.com"}).json()
+    body = client.post("/scan", json={"url": "https://example.com"}, headers=CODE).json()
 
     assert body["explanations_available"] is True
     assert "explanations_unavailable_reason" not in body
@@ -584,7 +546,7 @@ def test_a_blocked_url_never_reaches_the_explainer(monkeypatch):
 
     monkeypatch.setattr(main.explainer, "explain", record)
 
-    response = client.post("/scan", json={"url": "http://localhost"})
+    response = client.post("/scan", json={"url": "http://localhost"}, headers=CODE)
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "blocked_address"
@@ -609,4 +571,4 @@ def test_an_explainer_that_raises_would_not_be_hidden(stub_scanner, monkeypatch)
     # visible at all. In production the same exception reaches app.errors and
     # becomes the contract's internal_error, tested in tests/test_errors.py.
     with pytest.raises(RuntimeError, match="a bug in the explainer"):
-        client.post("/scan", json={"url": "https://example.com"})
+        client.post("/scan", json={"url": "https://example.com"}, headers=CODE)

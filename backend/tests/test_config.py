@@ -32,7 +32,9 @@ def isolated_env(monkeypatch, tmp_path):
     """No .env file, and no configuration inherited from the real environment."""
     monkeypatch.chdir(tmp_path)
     for key in (*REQUIRED, "ALLOWED_ORIGINS", "SCAN_TIMEOUT_MS",
-                "DAILY_SCAN_LIMIT", "ENVIRONMENT"):
+                "DAILY_SCAN_LIMIT", "ENVIRONMENT", "ANTHROPIC_MODEL",
+                "ANTHROPIC_EFFORT", "EXPLAIN_TIMEOUT_MS",
+                "RATE_LIMIT_PER_MINUTE", "TRUSTED_PROXY_HOPS"):
         monkeypatch.delenv(key, raising=False)
     get_settings.cache_clear()
     yield
