@@ -27,6 +27,37 @@ by the frontend to detect a sleeping backend.
 
 ---
 
+## 1.5 Check an access code
+
+```
+POST /verify
+X-Access-Code: <the shared access code>
+```
+
+No body. Answers one question: is this code right?
+
+**200**
+```json
+{ "ok": true }
+```
+
+**401** — the standard error shape, `code: "unauthorized"`.
+
+Task 8.0's code screen calls this when the app loads. It exists because the
+alternative -- calling `/scan` and seeing whether it refuses -- would run a
+real scan and spend a real daily slot just to check a code.
+
+Rate limited like `/scan`, and the rate limit is applied *before* the code is
+checked, so this cannot be used to guess a code quickly.
+
+**Added to this document on 2026-11-03, after the endpoint was built.** Phase
+6 shipped it without writing it down here, which had it backwards: this file
+is supposed to be the agreement the code follows, not a description of the
+code written afterwards. Recorded rather than quietly tidied, because an
+undocumented endpoint is the kind of thing that stays undocumented.
+
+---
+
 ## 2. Scan a page
 
 ```
