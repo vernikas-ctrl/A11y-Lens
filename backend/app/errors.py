@@ -84,8 +84,8 @@ DEFAULT_MESSAGE: dict[str, str] = {
         "scan it. This is deliberate, not a fault."
     ),
     "unauthorized": (
-        "Live scanning needs an access code. The demo report is available "
-        "without one."
+        "A11y-Lens needs an access code. Ask whoever sent you the link for "
+        "it."
     ),
     "not_found": "There is nothing at that address on this API.",
     "method_not_allowed": "That address does not accept this kind of request.",
@@ -116,6 +116,7 @@ class ApiError(Exception):
         code: ErrorCode,
         message: str | None = None,
         detail: str | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         if code not in STATUS_FOR_CODE:
             # A typo in a code would otherwise reach the frontend, which
@@ -125,6 +126,11 @@ class ApiError(Exception):
         self.message = message or DEFAULT_MESSAGE[code]
         self.detail = detail
         self.status_code = STATUS_FOR_CODE[code]
+        # Added in Phase 6 for `Retry-After` on a 429. The body already says
+        # how long to wait in words, but the header is the part an HTTP client
+        # obeys by itself, and telling a caller to back off in a format only a
+        # human can read is half an answer.
+        self.headers = headers
         super().__init__(self.message)
 
 
@@ -132,6 +138,7 @@ def error_response(
     code: str,
     message: str | None = None,
     detail: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     """Build the response body. The only place this shape is constructed."""
     return JSONResponse(
@@ -143,6 +150,7 @@ def error_response(
                 "detail": detail,
             }
         },
+        headers=headers,
     )
 
 
@@ -151,7 +159,7 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ApiError)
     async def handle_api_error(_: Request, exc: ApiError) -> JSONResponse:
-        return error_response(exc.code, exc.message, exc.detail)
+        return error_response(exc.code, exc.message, exc.detail, exc.headers)
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_exception(
