@@ -552,7 +552,7 @@ so it cannot be used to guess the code quickly.*
 unchanged, because they are referenced from DECISIONS.md and from commit
 messages.*
 
-- [ ] **8.0 The access code screen, as the shell** — the app is link-only, so
+- [x] **8.0 The access code screen, as the shell** — the app is link-only, so
   this is the front door and not a step in the middle: with no valid code,
   nothing else renders at all. Asked for once, remembered in the browser, with
   a clear message when it's wrong. Validated by the backend, never compared in
@@ -561,6 +561,22 @@ messages.*
   reveals the app and survives a reload; a wrong one explains itself.
   *It is also the first thing Phase 9 audits: labelled input, visible focus,
   the error announced to a screen reader rather than only coloured red.*
+  *Verified in a real browser with both halves running, not only in jsdom.
+  With no code: the protected app is **not in the DOM at all** -- checked
+  against `innerHTML`, not just what is visible, because hidden content is
+  still reachable by a screen reader and still in the page source. A wrong
+  code: `role="alert"`, `aria-invalid="true"`, the error tied to the field
+  with `aria-describedby`, focus returned to the input, nothing stored. The
+  right code: app revealed, and it survives a reload. Backend stopped: says
+  it cannot reach A11y-Lens, does **not** blame the code, keeps the code, and
+  offers "Try again".*
+  *The code is held in sessionStorage, so it is forgotten when the tab closes
+  -- more friction than localStorage, chosen for the borrowed computer.*
+  *A mutation found a real hole: opening the gate before the backend confirms
+  a stored code passed all 21 tests, because every one of them waited for the
+  settled state. In a browser that is a flash of the real app for anybody
+  whose code is no longer valid. Two tests now assert what is on screen
+  mid-flight, and the mutation fails.*
 
 - [ ] **8.1 The saved demo report** — a real saved report from a real scan,
   stored as a JSON file in the frontend and rendered instantly with **no

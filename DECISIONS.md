@@ -925,3 +925,59 @@ about to rely on it, and they will be reading one of those.
 
 See the 2026-11-03 entry "The app is link-only, and the access code is the
 front door". A front door with a glass panel is still worth having.
+
+---
+
+## 2026-11-03 — The access code is held in sessionStorage, not localStorage
+
+**Decided:** once a code is accepted it is kept in `sessionStorage`, so it is
+forgotten when the tab closes and has to be typed again on the next visit.
+
+`localStorage` would be kinder to the handful of people who have the link:
+type it once, ever. The reason not to is the borrowed or shared computer,
+where a remembered code is a code left behind for whoever sits down next.
+Closing a tab is something people already do without being told; clearing
+site data is not.
+
+**The cost is real and it is friction, not security.** Anybody who can open
+developer tools can read the code out of the bundle anyway, so this does not
+make the app harder to break into. What it does is stop a code lingering on a
+machine after the person who used it has walked away.
+
+**A remembered code is confirmed with the backend, never trusted.** Anything
+can be written into `sessionStorage` from the console, so a gate that believed
+what it found there would not be a gate. The app renders only after `/verify`
+has answered.
+
+**Every storage access is wrapped.** Safari in private browsing and a browser
+with site data blocked *throw* rather than returning nothing, and an unhandled
+throw at startup would blank the whole app. Failing to remember is treated as
+having nothing to remember, which puts the person exactly where they would
+have been anyway.
+
+---
+
+## 2026-11-03 — The gate tells "wrong code" apart from "backend asleep"
+
+**Decided:** `AccessGate` has four states -- checking, locked, open and
+offline -- rather than the obvious two.
+
+A gate that only knows in and out has to pick a message for every failure, and
+whichever it picks is wrong half the time. Telling somebody their code is
+wrong when the truth is that a free-tier backend is still waking up sends them
+hunting for a typo that is not there; the app is going to be deployed on
+exactly that kind of host.
+
+So: `unauthorized` means the code is wrong, and only then is the stored code
+discarded. Anything else -- a timeout, a refused connection, a 500 -- means we
+do not know, so the code is **kept**, the message says the service could not
+be reached, and the button says "Try again" rather than "Continue". Being
+logged out because the wifi dropped would be its own small injustice.
+
+**A fifth consideration, found by a mutation:** the gate must show nothing of
+the app while a stored code is still being checked. Setting it open first and
+letting the check close it again passed all 21 tests, because every test
+waited for the settled state. In a browser that is a visible flash of the real
+application for the one person it is meant to exclude -- and on a slow
+connection, not a flash at all. `status` now starts at `checking` and the two
+tests that catch it assert what is on screen mid-request.
