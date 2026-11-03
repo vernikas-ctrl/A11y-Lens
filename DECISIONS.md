@@ -981,3 +981,69 @@ waited for the settled state. In a browser that is a visible flash of the real
 application for the one person it is meant to exclude -- and on a slow
 connection, not a flash at all. `status` now starts at `checking` and the two
 tests that catch it assert what is on screen mid-request.
+
+---
+
+## 2026-11-03 — The demo report has real findings and hand-written explanations
+
+**Decided:** `frontend/src/demo/report.json` is genuine axe-core output from a
+real scan. The explanations and fixes in it were written by a person, and the
+app says so on screen.
+
+There is no API budget, so the alternative was a demo with six findings and
+six empty explanations. That would have left tasks 8.6 and 8.7 with nothing to
+render, and shown nobody what the tool is actually for — the findings are the
+part axe-core already gives you for free; the explanations are the point.
+
+**Where the line is drawn:** `scripts/make_demo_report.py` runs the real
+scanner against `backend/tests/fixtures/broken.html` — same Playwright, same
+axe-core, same code path — so the severities, selectors, rule ids and HTML are
+all genuine. `scripts/add_demo_explanations.py` then fills in prose written to
+the same rules `docs/prompt.md` sets for the model: what, who, a corrected
+snippet, and every guess declared.
+
+**Why it is labelled rather than quietly presented:** the entire argument of
+task 8.7 is that people should not paste generated code without reading what
+was assumed. A tool that was vague about the provenance of its own demo text
+would be teaching the opposite lesson on the first screen anybody sees.
+`EXPLANATIONS_ARE_HAND_WRITTEN` drives a notice above the report; if an API
+key ever arrives, the flag becomes false and the notice disappears by itself.
+
+**The provenance lives in TypeScript, not in the JSON**, because the JSON is
+the contract's `Report` shape and nothing else. A `hand_written: true` field
+inside it would make the demo stop being an example of what the backend
+actually returns, which is most of its value.
+
+**Why a local fixture rather than a real website:** a demo report of somebody
+else's site ships their mistakes as our marketing, and it goes stale the day
+they fix it. `broken.html` has six planted faults that do not move, each
+documented, plus a deliberate blind spot the scanner cannot see — which an
+accessibility tool is better off demonstrating than hiding.
+
+---
+
+## 2026-11-03 — The gate and the sleeping backend are in conflict
+
+**Found, not decided.** Recorded here because it is a real tension between two
+tasks that both seemed obviously right.
+
+Task 8.1 schedules the saved demo report early, with the stated reason that it
+"works while the free-tier backend is asleep". Task 8.0 makes the access code
+the shell: nothing renders until the backend has confirmed the code. Both were
+built as specified, and together they mean that when the backend is asleep a
+visitor sees "Could not reach A11y-Lens. Try again." — exactly the situation
+the demo report was meant to cover.
+
+Nothing is broken. The report itself needs no backend, which a test proves by
+rendering it with `fetch` replaced by something that throws. The gate is the
+only thing standing in the way, and it is doing what it was asked to do.
+
+This is a decision about what the app should be, not a defect to patch
+quietly, so it is task 8.10 rather than a silent fix. The honest options are:
+accept the wait; let a remembered code show the demo while the backend is
+unreachable and re-check before any scan; or keep the gate strict and replace
+the error with a "waking up, about 30 seconds" screen.
+
+**Worth noticing for its own sake:** this only surfaced because the live check
+was run with the backend genuinely stopped rather than assumed. Both tasks
+pass their own tests in isolation.

@@ -578,7 +578,7 @@ messages.*
   whose code is no longer valid. Two tests now assert what is on screen
   mid-flight, and the mutation fails.*
 
-- [ ] **8.1 The saved demo report** — a real saved report from a real scan,
+- [x] **8.1 The saved demo report** — a real saved report from a real scan,
   stored as a JSON file in the frontend and rendered instantly with **no
   backend call**. It sits *inside* the access-code shell from 8.0: not public,
   but the first thing anyone you give the code to sees. Worth building early
@@ -589,6 +589,23 @@ messages.*
   *See DECISIONS.md, 2026-11-03: a file in the frontend bundle has an ordinary
   public URL, so this report is obscured rather than gated. Decide then whether
   to serve it from behind the code check instead.*
+  *Done, with one limit stated plainly below.*
+  *The findings are real: `scripts/make_demo_report.py` runs the actual scanner
+  against `backend/tests/fixtures/broken.html` -- same browser, same axe-core,
+  same code path as a live scan -- and gets 3 critical, 2 serious, 1 moderate.
+  The explanations and fixes were written by hand
+  (`scripts/add_demo_explanations.py`) because there is no API budget, and the
+  UI says so on screen wherever the demo is shown.*
+  *A test renders the demo with `fetch` replaced by something that throws, so
+  a component reaching for the network fails the test rather than passing
+  because the backend happened to be up. Confirmed live too: loading the app
+  makes exactly one backend request, `POST /verify`, and no `/scan`.*
+  *THE LIMIT: "renders with the backend completely switched off" holds for the
+  report itself, but not for the whole app, because task 8.0's gate has to ask
+  the backend whether a code is valid before anything renders. With the
+  backend asleep a visitor sees "Could not reach A11y-Lens. Try again."
+  rather than the demo. That defeats part of why this task was scheduled
+  early. See task 8.10.*
 
 - [ ] **8.2 The URL input form** — labelled input, submit button, client-side
   validation, disabled while submitting. ~1 hr
@@ -600,21 +617,70 @@ messages.*
   and say what's happening. ~45 min
   **Done when:** a real scan shows unbroken feedback from submit to result.
 
-- [ ] **8.5 The results list** — grouped by severity, worst first, count per
+- [x] **8.5 The results list** — grouped by severity, worst first, count per
   group. ~1 hr
   **Done when:** scanning a messy real site renders a readable grouped list.
+  *Grouped by severity, worst first, count per group, empty levels left out.
+  Each group is a section with its own heading, so a screen reader user can
+  jump between them instead of walking the list.*
+  *Severity is a word, never only a colour -- WCAG 1.4.1, and roughly one man
+  in twelve cannot reliably separate the red from the grey. A mutation that
+  removed the word and kept the colour failed 8 tests.*
+  *The summary is a sentence rather than four coloured chips: chips would put
+  the information back into colour, and a row of numbers means nothing to
+  somebody new.*
 
-- [ ] **8.6 The single-issue view** — selector, offending HTML, Claude's
+- [x] **8.6 The single-issue view** — selector, offending HTML, Claude's
   explanation, the corrected snippet in a code block with a copy button, and a
   link to the WCAG or MDN reference. ~1 hr
   **Done when:** you can read one issue end to end and copy its fix.
+  *Order on screen is what is wrong, who it affects, where it is, the corrected
+  code, then the reference. "Who" sits second because it is the part that
+  persuades somebody to act -- a developer skimming forty findings chooses
+  from the consequence, not the rule id.*
+  *The copy button reports failure rather than silently doing nothing: the
+  clipboard can be refused, and somebody walking away believing they have the
+  code is worse than being told it did not work. "Copied" is a live region, so
+  it is announced and not only seen.*
+  *A test found a real fault here: the severity groups and the issue cards
+  were both level-3 headings, which is `heading-order` -- one of the six
+  faults this very report describes. Cards now step down to h4/h5/h6, and a
+  test walks every heading on the page asserting no level is skipped.*
 
-- [ ] **8.7 Show the guesses as guesses** — render the assumptions from 5.4
+- [x] **8.7 Show the guesses as guesses** — render the assumptions from 5.4
   visibly against the snippet, so nobody pastes an invented `alt` text
   believing the tool knew what the image showed. Decide the wording; "Claude
   assumed…" is clearer than a warning triangle. ~1 hr
   **Done when:** a missing-`alt` fix displays its assumption in a way a
   stranger reads before copying, confirmed by showing it to one person.
+  *The assumptions render directly under the snippet in a bordered block:
+  never collapsed, never a tooltip, never colour alone. Contract rule 5.*
+  *The count is in the heading ("This fix makes 2 assumptions") so none is
+  missed, and the block is absent entirely when a fix involved no guessing --
+  an empty box on a mechanical fix would train people to ignore the box,
+  which is the one thing it must not do.*
+  *Every one of the six demo fixes declares at least one assumption, asserted
+  by a test: a demo full of confident code with no caveats would teach exactly
+  the habit this task exists to prevent.*
+  *Still outstanding from the task's own "done when": showing it to one person
+  to confirm a stranger reads it before copying.*
+
+- [ ] **8.10 Decide what a visitor sees while the backend is asleep** — found
+  while verifying 8.1, which was scheduled early precisely so the app would be
+  useful with the backend down. It is not, because 8.0's gate must ask the
+  backend before anything renders, so a sleeping free-tier host shows "Could
+  not reach A11y-Lens" instead of the demo. Three options, and this is a
+  decision rather than a bug: (a) leave it, and accept a wait on the first
+  visit while the host wakes; (b) let a **remembered** code show the demo
+  while the backend is unreachable, and re-check before any scan -- the demo
+  costs nothing and needs no backend, scanning is what has to be gated; (c)
+  keep the gate strict and show a proper "waking up, this takes about 30
+  seconds" screen rather than an error. ~30 min once decided
+  **Done when:** loading the app with the backend stopped produces whichever
+  of those three was chosen, and a test holds it there.
+  *Worth deciding before Phase 10, because the deploy host is what makes this
+  real. (c) is the smallest honest fix; (b) is the one that actually delivers
+  what 8.1 was for.*
 
 - [ ] **8.8 Every error state** — invalid URL, blocked URL, page unreachable,
   scan timed out, backend asleep, wrong access code, daily limit reached. Seven
