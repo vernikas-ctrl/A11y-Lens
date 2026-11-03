@@ -1117,3 +1117,47 @@ Reimplementing the SSRF rules in a file the browser downloads would produce
 two sets of rules that drift, with the weaker and more visible one looking
 authoritative. Confirmed live: typing `http://127.0.0.1:8000` reaches the
 backend and comes back refused, with a real explanation.
+
+---
+
+## 2026-11-03 — A sleeping backend gets a waiting room, not an error
+
+**Vernika's decision**, from the three options raised when 8.1 and 8.0 turned
+out to conflict: keep the gate strict, and replace the flat error with a
+screen that waits.
+
+The demo report therefore stays behind the access code, which means task 8.1's
+original justification — "it works while the free-tier backend is asleep" — is
+not delivered and will not be. That is a real cost, accepted knowingly: the
+alternative was letting a remembered code show the demo without the backend
+confirming it, and the gate being unconditional is worth more than the demo
+being reachable thirty seconds sooner.
+
+**What a visitor sees instead:** "Waking the server up. This usually takes
+about 30 seconds", with an explanation that a free host stops the service when
+nobody has used it and that their code has not been rejected. It is styled as
+information, not as an error — dressing a cold start in red teaches people to
+distrust a working app.
+
+**It gives up after five tries across 48 seconds** and says the server may be
+down rather than asleep. A screen that promises "waking up" indefinitely is a
+spinner with better manners, and after a minute the likely explanation has
+genuinely changed.
+
+**The retries poll `/health`, never `/verify`.** This is the part worth
+remembering. `/verify` is rate limited to five requests a minute, shared with
+every other endpoint, and five retries is exactly that budget — so a gate that
+retried the real call would spend the entire allowance waking the server up
+and then be refused for rate limiting at the exact moment it succeeded. It
+would reliably cause the error it exists to prevent. `/health` is deliberately
+exempt from the limiter and does no work, which makes it the right question to
+ask repeatedly: not "is my code valid" but "are you there yet".
+
+**The order of the checks is load-bearing.** `unauthorized` is handled before
+`looksAsleep`. Reversed, a refusal would be answered with "waiting for the
+server", and the gate would become a waiting room that eventually lets anybody
+in. Five tests fail if the two are swapped, and a comment in the code says so.
+
+Verified with the backend genuinely stopped rather than mocked: the waking
+screen appears, and starting the backend mid-wait opened the app ten seconds
+later with no clicks at all.

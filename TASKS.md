@@ -684,7 +684,7 @@ messages.*
   *Still outstanding from the task's own "done when": showing it to one person
   to confirm a stranger reads it before copying.*
 
-- [ ] **8.10 Decide what a visitor sees while the backend is asleep** — found
+- [x] **8.10 Decide what a visitor sees while the backend is asleep** — found
   while verifying 8.1, which was scheduled early precisely so the app would be
   useful with the backend down. It is not, because 8.0's gate must ask the
   backend before anything renders, so a sleeping free-tier host shows "Could
@@ -700,6 +700,26 @@ messages.*
   *Worth deciding before Phase 10, because the deploy host is what makes this
   real. (c) is the smallest honest fix; (b) is the one that actually delivers
   what 8.1 was for.*
+
+  *Decided by Vernika on 3 Nov 2026: option (c), keep the gate strict and
+  replace the error with a waking screen. The demo stays behind the code.*
+  *Five tries over 48 seconds, widening gaps, then it gives up and says the
+  server may be down rather than asleep -- a screen that promises "waking up"
+  forever is a spinner with better manners.*
+  *The retries poll `/health`, never `/verify`. `/verify` is rate limited to
+  five a minute shared with everything else, and five retries is exactly that
+  budget: a gate that retried the real call would spend the whole allowance
+  waking the server and then be refused for rate limiting the moment it
+  worked, causing the error it exists to avoid.*
+  *Verified live, with the backend genuinely stopped: the waking screen
+  appears, and when the backend is started mid-wait the app lets itself in
+  **10 seconds later with no clicks**. Left alone with no backend at all, it
+  counted 1 to 5 and handed back the form with the honest message.*
+  *Six mutations tried, five caught. The sixth -- treating a 401 as "asleep"
+  -- changed nothing, because `unauthorized` is checked before `looksAsleep`.
+  Swapping those two, which is the reachable version of that mistake, fails
+  five tests. That ordering is what stops the gate becoming a waiting room
+  that eventually lets anybody in.*
 
 - [x] **8.8 Every error state** — invalid URL, blocked URL, page unreachable,
   scan timed out, backend asleep, wrong access code, daily limit reached. Seven
