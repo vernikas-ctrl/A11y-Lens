@@ -137,10 +137,14 @@ describe('entering a code', () => {
     expect(sentCode(accepting)).toBe('spaced-code')
   })
 
-  it('says the backend is unreachable rather than blaming the code', async () => {
+  it('waits for a sleeping backend rather than blaming the code', async () => {
     // The difference that matters: a wrong code is the person's problem and
     // a sleeping backend is not. Telling them their code is wrong sends them
     // hunting for a typo that is not there.
+    //
+    // Task 8.10 changed what this looks like. It used to say "Could not reach
+    // A11y-Lens. Try again." -- accurate, and useless: it describes a symptom
+    // and blames nothing. It now says the server is being woken.
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
     const user = userEvent.setup()
     renderGate()
@@ -150,10 +154,10 @@ describe('entering a code', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }))
 
     const message = await screen.findByRole('status')
-    expect(message).toHaveTextContent(/could not reach/i)
+    expect(message).toHaveTextContent(/waking the server up/i)
     expect(message).not.toHaveTextContent(/not right/i)
-    // And it offers another go rather than looking like a dead end.
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible()
+    // Nothing has actually gone wrong yet, so this must not be an alert.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('passes a rate limit through with the wait', async () => {
@@ -391,5 +395,170 @@ describe('the moment before the answer comes back', () => {
       headers: { 'Content-Type': 'application/json' },
     }))
     expect(await screen.findByText('the real application')).toBeVisible()
+  })
+})
+
+describe('waiting for a sleeping backend (task 8.10)', () => {
+  // A free host stops the service after about fifteen minutes of quiet and
+  // takes roughly half a minute to start it again, so the single most likely
+  // visitor is the one who meets a backend that is not there yet.
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** Fails every request until `wakesAfter` of them have been made. */
+  function sleepingUntil(wakesAfter: number) {
+    let calls = 0
+    return vi.fn(async (url: string) => {
+      calls += 1
+      if (calls <= wakesAfter) throw new TypeError('Failed to fetch')
+      const body = url.includes('/health')
+        ? { status: 'ok', version: '0.1.0' }
+        : { valid: true }
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+  }
+
+  async function submitCode(user: ReturnType<typeof userEvent.setup>) {
+    const field = await screen.findByLabelText('Access code')
+    await user.type(field, 'a-real-code')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByText(/waking the server up/i)
+  }
+
+  it('explains that nothing is wrong and the code was not rejected', async () => {
+    // Somebody who reads "could not reach" assumes they did something. The
+    // whole point of this screen is that they did not.
+    vi.stubGlobal('fetch', sleepingUntil(99))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    await submitCode(user)
+
+    expect(screen.getByText(/your code has not been rejected/i)).toBeVisible()
+    expect(screen.getByText(/free host that stops the service/i)).toBeVisible()
+  })
+
+  it('polls /health rather than /verify while it waits', async () => {
+    // /verify is rate limited to five a minute, shared with everything else,
+    // and five retries is exactly that budget. Retrying the real call would
+    // spend the whole allowance waking the server and then be refused for
+    // rate limiting the moment it worked -- causing the error it exists to
+    // avoid. /health is exempt from the limiter and does no work.
+    const stub = sleepingUntil(99)
+    vi.stubGlobal('fetch', stub)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    await submitCode(user)
+
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    const paths = stub.mock.calls.map(([url]) => new URL(url as string).pathname)
+    expect(paths.filter((path) => path === '/health').length).toBeGreaterThan(0)
+    // Exactly one /verify: the original submission, and no retries of it.
+    expect(paths.filter((path) => path === '/verify')).toHaveLength(1)
+  })
+
+  it('opens the app by itself once the server answers', async () => {
+    // Somebody who waits should be rewarded without pressing anything.
+    vi.stubGlobal('fetch', sleepingUntil(1))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    await submitCode(user)
+    expect(screen.queryByText('the real application')).not.toBeInTheDocument()
+
+    await vi.advanceTimersByTimeAsync(4_000)
+
+    expect(await screen.findByText('the real application')).toBeVisible()
+  })
+
+  it('counts its attempts out loud instead of spinning forever', async () => {
+    vi.stubGlobal('fetch', sleepingUntil(99))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    await submitCode(user)
+    await vi.advanceTimersByTimeAsync(4_000)
+
+    expect(await screen.findByText(/try 1 of 5/i)).toBeVisible()
+  })
+
+  it('gives up honestly when the attempts run out', async () => {
+    // A screen that says "waking up" forever is a spinner with better
+    // manners. After about a minute the likely explanation has changed, and
+    // saying so is more use than continuing to promise.
+    vi.stubGlobal('fetch', sleepingUntil(99))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    await submitCode(user)
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(await screen.findByText(/may be down rather than asleep/i)).toBeVisible()
+    // And it hands the form back rather than ending on a dead screen.
+    expect(screen.getByLabelText('Access code')).toBeVisible()
+  })
+
+  it('lets somebody who will not wait try immediately', async () => {
+    vi.stubGlobal('fetch', sleepingUntil(1))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    await submitCode(user)
+    await user.click(screen.getByRole('button', { name: /try now/i }))
+
+    expect(await screen.findByText('the real application')).toBeVisible()
+  })
+
+  it('still refuses a wrong code while the server is waking', async () => {
+    // The gate must not become a waiting room that eventually lets anyone in.
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls += 1
+      if (calls === 1) throw new TypeError('Failed to fetch')
+      if ((url as string).includes('/health')) {
+        return new Response(JSON.stringify({ status: 'ok', version: '0.1.0' }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify({ error: { code: 'unauthorized', message: 'No.', detail: null } }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      )
+    }))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    await submitCode(user)
+    await vi.advanceTimersByTimeAsync(4_000)
+
+    expect(await screen.findByText(/not right/i)).toBeVisible()
+    expect(screen.queryByText('the real application')).not.toBeInTheDocument()
+  })
+
+  it('does not treat a gateway error from the host as a refusal', async () => {
+    // A host that has stopped the service answers on its behalf while
+    // starting it, with a 503 of its own. That is "asleep", not "no".
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>starting</html>', {
+      status: 503, headers: { 'Content-Type': 'text/html' },
+    })))
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    renderGate()
+
+    const field = await screen.findByLabelText('Access code')
+    await user.type(field, 'a-real-code')
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(await screen.findByText(/waking the server up/i)).toBeVisible()
   })
 })
