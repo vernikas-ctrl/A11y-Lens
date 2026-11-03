@@ -1,0 +1,70 @@
+/* Tailwind v4 is configured here, in CSS, rather than in a tailwind.config.js
+   file. That changed in v4: `@theme` is the config, and every custom value in
+   it becomes both a CSS variable and a utility class. `--color-ink` gives you
+   `text-ink`, `bg-ink`, `border-ink` and so on. */
+@import "tailwindcss";
+
+/* --- Task 7.2: the palette ------------------------------------------------
+ *
+ * Four colours and two neutrals, chosen for contrast *now* rather than
+ * retrofitted in Phase 9, because fixing contrast after the screens exist
+ * means revisiting every one of them.
+ *
+ * Measured against WCAG AA, which wants 4.5:1 for normal text and 3:1 for
+ * large text and user interface parts. Every pair below clears 4.5:1, so the
+ * stricter threshold applies everywhere and there is no rule to remember
+ * about which text is big enough to relax it.
+ *
+ *   ink     on paper   16.49:1      ink     on surface   15.06:1
+ *   muted   on paper    6.47:1      muted   on surface    5.90:1
+ *   primary on paper    6.65:1      primary on surface    6.08:1
+ *   alert   on paper    6.54:1      alert   on surface    5.97:1
+ *   paper   on primary  6.65:1      paper   on alert      6.54:1
+ *
+ * The lowest is 5.90:1, which is headroom rather than a squeak past. That
+ * matters because these get darkened and lightened later for hover and
+ * disabled states, and a pair that starts at 4.6:1 fails the moment it is
+ * nudged.
+ *
+ * Reproduce the numbers with scripts/contrast.py -- the table is checked by a
+ * test, so it cannot quietly go stale if a colour is edited here.
+ *
+ * Severity is NOT in this palette. Severity is shown with a word, because
+ * roughly one man in twelve cannot reliably separate red from grey, and a
+ * list where severity is only a colour is a list they cannot read. Colour may
+ * reinforce the word later; it may never replace it.
+ */
+@theme {
+  --color-ink: #15202b;
+  --color-muted: #51606e;
+  --color-primary: #1b4fd8;
+  --color-alert: #b3261e;
+  --color-paper: #ffffff;
+  --color-surface: #f2f5f7;
+}
+
+/* --- Focus ----------------------------------------------------------------
+ *
+ * Phase 9 audits this properly, but the default has to be right from the
+ * first screen: a focus ring that is removed and not replaced makes the app
+ * unusable by keyboard, and that is far easier to prevent than to find later.
+ *
+ * `:focus-visible` rather than `:focus`, so the ring appears for keyboard
+ * users and not on every mouse click. Two shadows: a white one inside the
+ * element's edge, then the primary colour outside it, so the ring stays
+ * visible whichever colour sits behind it.
+ */
+@layer base {
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--color-paper),
+      0 0 0 4px var(--color-primary);
+    border-radius: 2px;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+  }
+}
