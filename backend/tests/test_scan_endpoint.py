@@ -27,9 +27,11 @@ from fastapi.testclient import TestClient
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from app import main
 from app.errors import ApiError
 from app.main import app
 from app.scanner import (
+    Report,
     Scanner,
     ScannerNotStarted,
     _block_requests_to_private_addresses,
@@ -434,3 +436,177 @@ def test_a_blocked_request_does_not_fail_the_whole_scan():
     """Aborted, not raised. One blocked image should not lose the report: the
     page renders without it and axe reports on what actually loaded."""
     assert route_decision("http://127.0.0.1/tracker.gif") == "abort"
+
+
+# --- Task 5.6: the endpoint composes a scan and an explanation --------------
+#
+# These tests stub the scanner rather than driving a browser, because the thing
+# under test is the *wiring*: that explaining happens after scanning, that a
+# failed explanation cannot fail the request, and that the response FastAPI
+# serialises still matches the contract field for field.
+#
+# Scanning a real page through this endpoint is not possible without the
+# internet, and deliberately so: the fixture lives on disk, and `check_url`
+# refuses both `file://` and loopback addresses. That refusal is Phase 3
+# working as intended, so the live end-to-end check belongs in a manual run
+# against a public URL, not in a test suite that has to pass offline.
+
+
+def canned_report(issue_count: int = 2) -> Report:
+    """What `Scanner.scan` hands back: real findings, nothing explained."""
+    return {
+        "url": "https://example.com/",
+        "page_title": "Example Domain",
+        "scanned_at": "2026-11-03T12:00:00Z",
+        "scan_duration_ms": 900,
+        "explanations_available": False,
+        "explanations_unavailable_reason": "api_unavailable",
+        "summary": {
+            "critical": 0,
+            "serious": issue_count,
+            "moderate": 0,
+            "minor": 0,
+            "total": issue_count,
+        },
+        "issues": [
+            {
+                "id": f"image-alt-{index}",
+                "rule_id": "image-alt",
+                "severity": "serious",
+                "wcag": ["1.1.1"],
+                "reference_url": "https://dequeuniversity.com/rules/axe/4.14/image-alt",
+                "selector": f"main > img:nth-child({index + 1})",
+                "html": f'<img src="/picture-{index}.png">',
+                "explanation": None,
+                "fix": None,
+            }
+            for index in range(issue_count)
+        ],
+    }
+
+
+@pytest.fixture
+def stub_scanner(monkeypatch):
+    """Replace the browser with a canned report, leaving everything else real."""
+
+    async def fake_scan(url: str, timeout_ms: int) -> Report:
+        del url, timeout_ms
+        return canned_report()
+
+    monkeypatch.setattr(main.scanner, "scan", fake_scan)
+
+
+def test_a_scan_returns_findings_when_explanations_are_unavailable(stub_scanner):
+    """Task 5.6's "done when", at the level of the HTTP response: when
+    explanations cannot be had, the findings still come back and the body is
+    still contract-shaped.
+
+    There is no lifespan here -- see the module docstring -- so the explainer
+    holds no client, which is the same situation as a blanked-out API key from
+    the endpoint's point of view. It is also a guarantee worth having in a test
+    suite: with no client there is nothing that *could* reach the network, so
+    these tests cannot quietly start spending money.
+
+    (`tests/test_explainer.py` covers the placeholder-key path specifically.
+    The key in `conftest.py` is fake but well-formed, so `enabled` is True
+    here; what stops the call is the missing client.)"""
+    assert main.explainer.is_running is False
+
+    response = client.post("/scan", json={"url": "https://example.com"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["summary"]["total"] == 2
+    assert len(body["issues"]) == 2
+    assert body["explanations_available"] is False
+    assert body["explanations_unavailable_reason"] == "api_unavailable"
+    assert all(issue["explanation"] is None for issue in body["issues"])
+    assert all(issue["fix"] is None for issue in body["issues"])
+
+
+def test_the_degraded_body_has_exactly_the_contract_keys(stub_scanner):
+    response = client.post("/scan", json={"url": "https://example.com"})
+    body = response.json()
+
+    assert set(body) == {
+        "url", "page_title", "scanned_at", "scan_duration_ms",
+        "explanations_available", "explanations_unavailable_reason",
+        "summary", "issues",
+    }
+    assert set(body["issues"][0]) == {
+        "id", "rule_id", "severity", "wcag", "reference_url",
+        "selector", "html", "explanation", "fix",
+    }
+
+
+def test_an_explained_body_omits_the_unavailable_reason_entirely(
+    stub_scanner, monkeypatch
+):
+    """The contract says that key is present *only* when explanations are
+    unavailable. A `null` in its place would be a different shape, and the
+    frontend is entitled to read the key's presence as the signal -- so this
+    checks the JSON that actually goes over the wire, after FastAPI's
+    response_model has had its say."""
+
+    async def fake_explain(report: Report) -> Report:
+        for issue in report["issues"]:
+            issue["explanation"] = {"what": "No alt attribute.", "who": "A screen reader user hears nothing."}
+            issue["fix"] = {
+                "language": "html",
+                "snippet": '<img src="/picture-0.png" alt="A picture">',
+                "assumptions": ["Assumed the subject of the picture."],
+            }
+        report["explanations_available"] = True
+        report.pop("explanations_unavailable_reason", None)
+        return report
+
+    monkeypatch.setattr(main.explainer, "explain", fake_explain)
+
+    body = client.post("/scan", json={"url": "https://example.com"}).json()
+
+    assert body["explanations_available"] is True
+    assert "explanations_unavailable_reason" not in body
+    assert body["issues"][0]["explanation"]["what"] == "No alt attribute."
+    assert body["issues"][0]["fix"]["assumptions"] == [
+        "Assumed the subject of the picture."
+    ]
+
+
+def test_a_blocked_url_never_reaches_the_explainer(monkeypatch):
+    """The order the whole of Phase 3 exists to guarantee, now with a third
+    step behind it: nothing is fetched and nothing is explained until the
+    address has been approved."""
+    called: list[str] = []
+
+    async def record(report: Report) -> Report:
+        called.append("explained")
+        return report
+
+    monkeypatch.setattr(main.explainer, "explain", record)
+
+    response = client.post("/scan", json={"url": "http://localhost"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "blocked_address"
+    assert called == []
+
+
+def test_an_explainer_that_raises_would_not_be_hidden(stub_scanner, monkeypatch):
+    """The explainer promises never to raise, and `app.main` leans on that
+    promise rather than wrapping the call in a try block of its own.
+
+    A second safety net there would be dead code in every passing case and
+    would quietly swallow a real bug. So the promise is tested instead: if the
+    explainer ever breaks it, that surfaces as a loud failure rather than as a
+    silently half-filled report."""
+
+    async def exploding_explain(report: Report) -> Report:
+        raise RuntimeError("a bug in the explainer")
+
+    monkeypatch.setattr(main.explainer, "explain", exploding_explain)
+
+    # TestClient re-raises what the server raised, which is what makes this
+    # visible at all. In production the same exception reaches app.errors and
+    # becomes the contract's internal_error, tested in tests/test_errors.py.
+    with pytest.raises(RuntimeError, match="a bug in the explainer"):
+        client.post("/scan", json={"url": "https://example.com"})
