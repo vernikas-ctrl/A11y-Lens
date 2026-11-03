@@ -507,22 +507,37 @@ so it cannot be used to guess the code quickly.*
 
 ## Phase 7 — Frontend skeleton
 
-- [ ] **7.1 Scaffold Vite + React + TypeScript** — in `frontend/`, on
+- [x] **7.1 Scaffold Vite + React + TypeScript** — in `frontend/`, on
   `localhost:5173`. ~30 min
   **Done when:** `npm run dev` serves the starter page and `npm run build`
   finishes with no TypeScript errors.
+  *Vite 8, React 19, TypeScript 7. Strict mode is the default in TypeScript 7
+  and is now also set explicitly, so it survives a future change of default.
+  The scaffold's demo page and assets were deleted rather than left to rot.*
 
-- [ ] **7.2 Install and configure Tailwind** — plus a small palette chosen for
+- [x] **7.2 Install and configure Tailwind** — plus a small palette chosen for
   contrast *now* rather than retrofitted in Phase 9. Four colours is plenty.
   ~45 min
   **Done when:** a Tailwind class visibly styles something, and your palette's
   text-on-background pairs are recorded with their measured contrast ratios.
+  *Tailwind v4 configures in CSS, not in a `tailwind.config.js` -- `@theme` in
+  `src/index.css` is the config now. Four colours and two neutrals; every
+  usable pair measured and recorded, worst case 5.90:1 against AA's 4.5:1.
+  `src/palette.test.ts` reads the colours out of the CSS and re-does the
+  arithmetic, so a colour edited to something that fails breaks the build.
+  Two mutations confirmed it bites: a plausible-looking grey (2.51:1) failed
+  two pairs, and a colour nudged to a bare 4.6:1 failed the headroom test.
+  Run `npm run contrast` for the table.*
 
-- [ ] **7.3 Set up Vitest and React Testing Library** — plus one trivial test,
+- [x] **7.3 Set up Vitest and React Testing Library** — plus one trivial test,
   for the same reason as 2.2. ~45 min
   **Done when:** `npm test` runs and reports 1 passed.
+  *Vitest 5 with jsdom and Testing Library. Globals are off, so each test file
+  imports `describe`/`it`/`expect` -- one more line per file in exchange for a
+  reader seeing where everything comes from. 41 tests, not the one the task
+  asked for.*
 
-- [ ] **7.4 Typed API client** — TypeScript types written by hand from
+- [x] **7.4 Typed API client** — TypeScript types written by hand from
   `docs/api-contract.md`, one `scanUrl()` function, base URL and access code
   from config so local and production differ only by configuration. ~1 hr
   **Done when:** `scanUrl()` against your local backend returns typed data and
@@ -721,3 +736,17 @@ through your app specifically to check.
   left-hand entry is attacker-controlled, so reading it would let anyone claim
   a fresh allowance on every request. A deliberate mutation to read the left
   end fails two tests.*
+  *Types written by hand from `docs/api-contract.md`, section numbers cited in
+  the comments. Nothing throws: every call returns `{ok: true, data}` or
+  `{ok: false, error}`, so TypeScript refuses to let a caller read `data`
+  without checking first. Three client-only error codes (`network_error`,
+  `request_timeout`, `malformed_response`) cover failures the backend never
+  sees and so cannot name.
+  Verified live against the backend on port 8000 with `npm run smoke`: health,
+  a wrong code refused 401, the right code accepted, `https://example.com`
+  scanned to 9 typed findings in 4.4s, and a loopback address refused
+  `blocked_address`. `npm run build` type-checks clean.
+  While writing the client it turned out `POST /verify` was never added to the
+  contract when Phase 6 built it -- the wrong way round, since the contract is
+  meant to be what the code follows. Now documented as section 1.5, with a
+  note saying it was written down late.*

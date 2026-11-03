@@ -799,3 +799,129 @@ secret and a near-miss is a hint. `app/errors.py` already declined to log
 request headers for this reason; there is now a test that a refusal leaves a
 trace in the log without the attempt in it, and another asserting the value
 never appears in the OpenAPI schema.
+
+---
+
+## 2026-11-03 — The palette is four colours, measured, and a test keeps it honest
+
+**Decided:** ink `#15202b`, muted `#51606e`, primary `#1b4fd8`, alert
+`#b3261e`, on paper `#ffffff` and surface `#f2f5f7`.
+
+| pair | ratio | | pair | ratio |
+|---|---|---|---|---|
+| ink on paper | 16.49:1 | | ink on surface | 15.06:1 |
+| muted on paper | 6.47:1 | | muted on surface | 5.90:1 |
+| primary on paper | 6.65:1 | | primary on surface | 6.08:1 |
+| alert on paper | 6.54:1 | | alert on surface | 5.97:1 |
+| paper on primary | 6.65:1 | | paper on alert | 6.54:1 |
+
+WCAG AA asks for 4.5:1 on normal text and 3:1 on large text and interface
+parts. Every pair here clears the stricter number, so there is no rule to
+remember about which text is big enough to relax it.
+
+**Chosen in Phase 7 rather than Phase 9 on purpose.** Phase 9 audits this app
+against WCAG AA. Finding then that the body text fails would mean revisiting
+every screen built in Phase 8, and the pressure at that point is to nudge a
+colour until it technically passes rather than to pick a good one. Deciding
+first costs an hour; deciding last costs the eight screens.
+
+**The worst pair is 5.90:1, not 4.6:1, and that is deliberate.** Hover,
+disabled and pressed states are made by lightening or darkening these colours.
+A pair that starts at a bare pass fails the moment it is nudged, and the
+failure appears in a state nobody screenshots. There is a test asserting the
+worst pair stays at or above 5.5:1 for exactly this reason.
+
+**A comment cannot fail, so the table is also a test.** `src/palette.test.ts`
+reads the hex values out of `src/index.css` -- the file the app actually
+renders from, not a second copy -- and redoes the WCAG arithmetic. Editing a
+colour to something that fails now breaks `npm test`. Two mutations confirmed
+it bites: `#9aa5ad`, a grey that looks perfectly reasonable, measured 2.51:1
+and failed two pairs; a primary nudged to 4.6:1 passed every pair and failed
+the headroom test.
+
+**Severity is not in the palette.** The results list in task 8.5 groups by
+severity, and the obvious design is a colour per level. Roughly one man in
+twelve cannot reliably tell red from grey, so a list where severity is only a
+colour is a list they cannot read. Severity is shown with a word. Colour may
+reinforce it later; it may not replace it.
+
+---
+
+## 2026-11-03 — The API types are written by hand, not generated
+
+**Decided:** `frontend/src/api/types.ts` is typed out from
+`docs/api-contract.md`, with section numbers in the comments. No generator,
+and nothing read from the backend's OpenAPI schema.
+
+Generating them would be less work and is the usual advice. It is wrong here
+because of what the contract is for: it says that if the document and the code
+disagree, **the code is wrong**. Types generated from the backend make the
+backend correct by definition, and the disagreement the contract exists to
+surface can never happen -- a field the backend renamed by accident would
+simply be renamed in the frontend too, and both halves would agree on
+something the document never said.
+
+Two independent readings of one document catch what one reading cannot. The
+cost is that a deliberate contract change now takes two edits instead of one,
+which is the right price: a contract change ought to be deliberate enough to
+notice twice.
+
+This is also what surfaced that `POST /verify` was never written into the
+contract when Phase 6 built it. Writing the client meant reading the document,
+and the endpoint was not in it.
+
+---
+
+## 2026-11-03 — The API client returns failures instead of throwing
+
+**Decided:** every function in `frontend/src/api/client.ts` returns
+`{ok: true, data}` or `{ok: false, error}`. Nothing throws for an expected
+failure.
+
+The contract has ten error codes, and three more failures exist that the
+backend never sees and so cannot name: the request not arriving at all, our
+own timeout, and a response that is not the contract's shape (a sleeping host
+or a proxy answering with an HTML error page). That is thirteen ways for a
+call to not produce a report, against one way for it to succeed.
+
+With exceptions, none of those thirteen appear in the type signature, and a
+component that forgets to catch compiles perfectly and breaks in front of a
+user. With this shape TypeScript refuses to let a caller read `data` without
+checking `ok` first. It is the same reasoning as the backend's explainer never
+raising: the failure path is the common path, so it belongs in the design
+rather than in a `try` block somebody has to remember.
+
+**One exception, which is not a failure:** a caller cancelling its own request
+through an `AbortSignal` is re-thrown rather than reported, because nobody
+needs to be told about a thing they asked for.
+
+**The timeout is ours, not the browser's.** `fetch` has no timeout. Without
+one, a backend that accepts the connection and then goes quiet leaves the page
+waiting until the browser gives up, which can be minutes of nothing. Ninety
+seconds, because a scan runs a real browser against a real page and a cold
+free-tier host can take a while to wake up before it even starts.
+
+---
+
+## 2026-11-03 — The access code in the frontend is weaker, and says so
+
+**Decided:** `VITE_ACCESS_CODE` is documented, in three places, as not being a
+secret.
+
+Vite substitutes `VITE_*` variables at build time, so anything in them is
+inside the JavaScript the browser downloads. Anybody who can load the page can
+read it with developer tools. There is no way to put a shared code in a
+frontend and have it be otherwise.
+
+What it actually buys is that a link, forwarded or found, is not casually
+usable -- which is what "link-only" was asked for and is a real thing to want.
+What it does not buy is protection from somebody who wants in. The backend's
+`ANTHROPIC_API_KEY` is a real secret and never comes near this half; the two
+should not be thought of as the same kind of thing.
+
+Written into `src/config.ts`, `.env.example` and `frontend/README.md` rather
+than noted once here, because the person who needs to know is whoever is
+about to rely on it, and they will be reading one of those.
+
+See the 2026-11-03 entry "The app is link-only, and the access code is the
+front door". A front door with a glass panel is still worth having.
