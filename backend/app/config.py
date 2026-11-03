@@ -79,6 +79,42 @@ class Settings(BaseSettings):
         le=120_000,
         description="How long a single page may take to load before giving up.",
     )
+
+    # --- Phase 5: the explanation call. -------------------------------------
+    #
+    # The model is configuration and not a constant in the code because the
+    # choice is a cost decision, and a cost decision has to be changeable
+    # without a deploy. Opus 5.5 is the default: the explanations are the part
+    # of this product a person actually reads.
+    anthropic_model: str = Field(
+        default="claude-opus-5-5",
+        description="Model that writes the explanations. Cheaper alternatives: "
+                    "claude-sonnet-5-5, claude-haiku-5-5.",
+    )
+    anthropic_effort: str = Field(
+        default="low",
+        description="How much thinking the model does before answering: low, "
+                    "medium, high, xhigh or max. Thinking is billed as output, "
+                    "so this is the main cost dial after the model itself.",
+    )
+    explain_timeout_ms: int = Field(
+        default=60_000,
+        ge=1_000,
+        le=300_000,
+        description="How long the explanation call may take before the scan "
+                    "gives up on it and returns findings without explanations.",
+    )
+
+    @field_validator("anthropic_effort")
+    @classmethod
+    def check_effort(cls, value: str) -> str:
+        """A typo here would come back as a 400 from the API on the first real
+        scan, which is a confusing place to discover a misspelt setting."""
+        allowed = ("low", "medium", "high", "xhigh", "max")
+        cleaned = value.strip().lower()
+        if cleaned not in allowed:
+            raise ValueError(f"must be one of {', '.join(allowed)}")
+        return cleaned
     daily_scan_limit: int = Field(
         default=50,
         ge=0,
