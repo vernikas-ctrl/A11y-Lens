@@ -463,7 +463,13 @@ these are ordered to keep spend near nothing until it works.
 
 **Both must be finished before the app is ever reachable from the internet.**
 
-- [ ] **6.1 Hard daily spend ceiling** — a server-side counter of API calls (or
+*Also built here, beyond the three tasks: `POST /verify`. The frontend's code
+screen (task 8.0) needs a way to check a code without running a scan, and the
+alternative -- asking `/scan` and seeing whether it refuses -- would spend a
+slot and four seconds to check a password. Rate-limited like everything else,
+so it cannot be used to guess the code quickly.*
+
+- [x] **6.1 Hard daily spend ceiling** — a server-side counter of API calls (or
   tokens) per day. Past the limit, scanning returns axe results with
   explanations unavailable — the 5.6 path — instead of spending money. This is
   the one thing standing between a forwarded link and an empty account. ~1 hr
@@ -472,15 +478,27 @@ these are ordered to keep spend near nothing until it works.
   *Link-only sharing means a small cap is enough: set `DAILY_SCAN_LIMIT` nearer
   15 than 50. A smaller ceiling is a smaller worst case if the link is
   forwarded.*
+  *Verified over real HTTP with `DAILY_SCAN_LIMIT=1`: the first scan returned
+  200 with 9 findings, the second returned 429 `daily_limit_reached` in 3ms --
+  refused before a browser was touched, and with no API call made. The ceiling
+  counts **scans**, not Claude calls: that is what the setting has always
+  claimed to be, it also caps the 859MB a scan costs the host, and counting
+  API calls would have left scanning uncapped whenever no key is configured.
+  Both of the contract's `daily_limit_reached` places are now real.*
 
-- [ ] **6.2 Access code for live scanning** — one shared secret, from `.env`,
+- [x] **6.2 Access code for live scanning** — one shared secret, from `.env`,
   checked by the backend on `/scan`. Prefer a code entered once and remembered
   in the browser over a secret pasted in the URL, since URLs leak through
   browser history and referrer headers. ~1 hr
   **Done when:** `POST /scan` without the code is refused, with it succeeds,
   and the code appears nowhere in the repo.
+  *Verified over real HTTP: no code and a wrong code both give 401, the right
+  code gives 200, and `/scan` without a code is refused before anything runs.
+  Timing-safe comparison, asserted by recording that `secrets.compare_digest`
+  is the thing actually called. A test reads the real code out of the
+  git-ignored `.env` and `git grep`s the tracked files for it.*
 
-- [ ] **6.3 Simple rate limiting** — a modest per-IP limit. With a shared link
+- [x] **6.3 Simple rate limiting** — a modest per-IP limit. With a shared link
   rather than open access this is a second line of defence, so keep it small
   and simple. ~45 min
   **Done when:** rapid repeat requests get a 429 with a clear message.
@@ -697,3 +715,9 @@ through your app specifically to check.
 - [ ] **11.3 Tidy DECISIONS.md** — read it end to end, fix what's no longer
   true, add anything you decided but never wrote down. ~30 min
   **Done when:** every entry is accurate about the code as it now stands.
+  *Verified over real HTTP with `RATE_LIMIT_PER_MINUTE=3`: the fourth request
+  in a minute came back 429 with `retry-after: 60`. Counted per address, and
+  the address is taken from the **right-hand** end of `X-Forwarded-For` -- the
+  left-hand entry is attacker-controlled, so reading it would let anyone claim
+  a fresh allowance on every request. A deliberate mutation to read the left
+  end fails two tests.*
