@@ -51,6 +51,35 @@ export default function ReportView({ report, explanationsAreHandWritten = false 
         )}
       </div>
 
+      {/* Task 8.9. Contract 2.1: an empty `issues` array means no *detectable*
+          issues, which is not the same as an accessible page -- and this is
+          the one screen where somebody is most likely to stop looking. The
+          caveat is part of the result, not small print below it.
+
+          The figure is not rhetorical. `backend/tests/fixtures/broken.html`
+          carries a documented blind spot: a field named only by its
+          placeholder, which axe-core passes outright. The scanner cannot see
+          it, so a page built entirely that way would produce this screen. */}
+      {total === 0 && (
+        <div className="rounded-md border border-surface bg-surface p-4">
+          <p className="text-ink">
+            The automated checks found nothing to report on this page. That is a good
+            sign and worth having.
+          </p>
+          <p className="mt-2 text-ink">
+            <span className="font-medium">It is not a clean bill of health.</span>{' '}
+            Automated tools find roughly a third of accessibility problems. Whether a
+            link&rsquo;s text makes sense out of context, whether alt text describes the
+            right thing, whether the page can actually be operated by keyboard in a
+            sensible order — none of that can be judged by a machine.
+          </p>
+          <p className="mt-2 text-sm text-muted">
+            The useful next steps are to try the page with the keyboard alone, and to
+            turn on a screen reader and listen to it.
+          </p>
+        </div>
+      )}
+
       {/* Contract 2.3. Not an error -- the findings are all real and the scan
           worked. Said plainly so nobody assumes the page is fine. */}
       {!report.explanations_available && (
