@@ -161,9 +161,16 @@ def test_requests_are_logged_without_the_access_code(caplog):
             headers={"X-Access-Code": "super-secret-code"},
         )
 
-    assert "GET /thing -> 200" in caplog.text
-    assert "super-secret-code" not in caplog.text
-    assert "should-not-be-logged" not in caplog.text
+    # Only our own records. caplog captures every logger, and the HTTP client
+    # the test itself uses logs the full request URL -- which would make this
+    # assertion about somebody else's library rather than about the middleware.
+    ours = " | ".join(
+        record.getMessage() for record in caplog.records if record.name == "a11y_lens"
+    )
+
+    assert "GET /thing -> 200" in ours
+    assert "super-secret-code" not in ours
+    assert "should-not-be-logged" not in ours
 
 
 # --- The two tables must agree ----------------------------------------------

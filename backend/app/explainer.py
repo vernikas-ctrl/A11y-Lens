@@ -66,6 +66,7 @@ MAX_TOKENS_CEILING = 32_000
 GOOD_STOP_REASONS = ("end_turn", "stop_sequence")
 
 UNAVAILABLE_API = "api_unavailable"
+UNAVAILABLE_LIMIT = "daily_limit_reached"
 
 
 # --- What we ask the model to return ----------------------------------------
@@ -397,6 +398,11 @@ class Explainer:
         Returns the same report object, modified. Never raises: on any failure
         the report comes back with `explanations_available: false` and a reason,
         which is the contract's degraded success and still a 200.
+
+        It knows nothing about the daily ceiling. The ceiling counts scans,
+        and only the endpoint knows a scan happened -- see `app.main`, which
+        takes a slot after the scan and calls `mark_unavailable` instead of
+        this when there is none left.
         """
         issues = report["issues"]
 
@@ -409,7 +415,7 @@ class Explainer:
             return report
 
         if not self._enabled or self._client is None:
-            return _degrade(report, UNAVAILABLE_API)
+            return mark_unavailable(report, UNAVAILABLE_API)
 
         payload = _plan(issues, self.cache)
         html_by_ref = {
@@ -427,7 +433,7 @@ class Explainer:
                 # scan of a page the first scan explained should not lose its
                 # explanations because the API happens to be down now.
                 if _fill_from_cache(issues, self.cache) == 0:
-                    return _degrade(report, UNAVAILABLE_API)
+                    return mark_unavailable(report, UNAVAILABLE_API)
                 report["explanations_available"] = True
                 report.pop("explanations_unavailable_reason", None)
                 return report
@@ -435,7 +441,7 @@ class Explainer:
 
         filled = _fill_from_cache(issues, self.cache)
         if filled == 0:
-            return _degrade(report, UNAVAILABLE_API)
+            return mark_unavailable(report, UNAVAILABLE_API)
 
         if filled < len(issues):
             # Not a failure, but worth seeing in the log: it means the model
@@ -547,8 +553,14 @@ def _failed(message: str, *args: object) -> _ExplainFailed:
     return _ExplainFailed()
 
 
-def _degrade(report: Report, reason: str) -> Report:
-    """The contract's section 2.3: findings kept, explanations marked missing."""
+def mark_unavailable(report: Report, reason: str) -> Report:
+    """The contract's section 2.3: findings kept, explanations marked missing.
+
+    Public, because the daily ceiling is not a failure of this module and
+    `app.main` needs to produce the same shape when it runs out of allowance.
+    `reason` is one of the contract's two values: `api_unavailable` or
+    `daily_limit_reached`.
+    """
     for issue in report["issues"]:
         issue["explanation"] = None
         issue["fix"] = None

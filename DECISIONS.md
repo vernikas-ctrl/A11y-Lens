@@ -685,3 +685,117 @@ Two ways to close it, to be decided when task 8.1 is built:
 Leaning towards 2, because the cost of 1 is the demo failing in front of
 whoever she sent the link to, which is worse than a determined visitor reading
 a report she meant to show them anyway.
+
+---
+
+## 2026-11-03 — The daily ceiling counts scans, not Claude calls
+
+**Decided:** `DAILY_SCAN_LIMIT` is a cap on scans performed, consumed once per
+scan after the page has loaded and before the explanation.
+
+The first implementation counted API calls, on the reasoning that money is the
+only thing worth protecting. Writing the test for task 6.1 is what showed that
+to be wrong, in two ways:
+
+1. **With no API key, nothing was capped at all.** The explainer gives up
+   before it would ever reserve, so a key-less deployment — which is exactly
+   the state this project is in — would have accepted unlimited scans. Task
+   6.1's own "done when" could not have passed.
+2. **A scan is expensive even when it is free.** Phase 1 measured nearly 859MB
+   and several seconds per scan. On the small host this is going to land on,
+   that is the resource most worth rationing, and it is spent whether or not
+   Claude is reachable.
+
+**The cost:** re-scanning a page whose explanations are all cached still
+consumes a slot, even though it costs nothing in API terms. That is the right
+way round — the scan itself was the expensive part — but it is a change from
+what `docs/prompt.md` section 6 implies about repeat scans being free. The
+*money* is still free on a repeat; the *allowance* is not.
+
+**Where it is taken, and why there:** not before the scan, because a slot held
+across four seconds of page loading would be lost entirely if the scan then
+failed. Not inside the explainer, because the explainer should not know what a
+budget is. So: in the endpoint, after the scan.
+
+That placement is also what makes **both** of the contract's
+`daily_limit_reached` cases real, rather than one of them being documentation
+for a branch that could never run:
+
+- The allowance is already gone when the request arrives → 429, before a
+  browser is touched. Measured at 3ms against a real server.
+- The allowance runs out *while* this scan is loading a page, because another
+  request took the last slot → 200 with the findings and
+  `explanations_unavailable_reason: "daily_limit_reached"`. A real race: a
+  scan holds things up for several seconds.
+
+**In memory, and therefore forgotten on restart.** A dictionary costs nothing
+and cannot be misconfigured; a database costs money. The consequence is that a
+host which restarts the app hands out a fresh allowance, so this is a brake
+rather than a guarantee. **The deploy must also run a single worker** — two
+workers mean two counters and quietly twice the cap. One worker is required at
+859MB a scan anyway, but it has to be checked rather than assumed, which is a
+Phase 10 job.
+
+---
+
+## 2026-11-03 — Rate limiting reads X-Forwarded-For from the right
+
+**Decided:** the address a request is counted against comes from the **last**
+entries of `X-Forwarded-For`, not the first, controlled by a
+`TRUSTED_PROXY_HOPS` setting that is 0 locally and 1 behind a host's proxy.
+
+`X-Forwarded-For` is attacker-controlled. Each proxy *appends* the address it
+received the request from, so a client that sends
+`X-Forwarded-For: 1.2.3.4` ends up with `1.2.3.4, <their real address>` by the
+time it reaches us. Reading the first entry — the obvious choice, and the
+common mistake — means anybody can invent a new address on every request and
+walk straight past the rate limit. Reading from the right gives the entry a
+trusted proxy wrote.
+
+Getting the hop count wrong breaks it in one direction or the other: too low
+and a spoofed header wins, too high and every request looks like it came from
+the same made-up address. Hence a setting with both failure modes written down
+next to it in `.env.example`, rather than a constant.
+
+**Fixed window rather than a sliding one or a token bucket.** It is a handful
+of lines and cannot drift. What it defends against here is somebody holding
+down a button or running a loop against a link they were given, not a
+distributed attack — and the daily ceiling is the real backstop behind it.
+
+**`Retry-After` is sent as well as said.** The body explains the wait in
+words, which is for a person; the header is what an HTTP client obeys on its
+own. `ApiError` grew an optional `headers` argument for this, which is the
+first time a Phase 2 class needed extending.
+
+---
+
+## 2026-11-03 — The access code is checked after the rate limit, and compared in constant time
+
+**Decided:** the order of checks on `/scan` is rate limit, then access code,
+then daily ceiling, then URL safety, then the scan, then the explanation.
+
+Each step is more expensive than the one before it, and the cheapest are also
+the most protective. Rate limiting first means a flood of guesses runs out of
+requests before it reaches the comparison. URL safety stays last of the checks
+because it resolves DNS, and real work is not worth doing for a request that
+was never allowed.
+
+**A deliberate mutation proved this was untested.** Swapping the order on
+`/scan` passed every test in the suite, because the ordering test that existed
+was written against `/verify` — two separate dependency lists, and testing one
+proves nothing about the other. There is now a test for each.
+
+**The comparison uses `secrets.compare_digest`.** `==` on strings stops at the
+first differing byte, so how quickly a wrong code is rejected leaks how much of
+it was right, recoverable one character at a time given enough attempts. The
+rate limiter makes that slow as well, but the constant-time comparison costs
+one import. The test asserts the mechanism rather than the timing — timing is
+not measurable reliably on a shared machine, so it records that
+`compare_digest` is the function actually called.
+
+**Nothing about the code is written down.** Not the expected value, not the
+offered one, not its length. A mistyped code in a log file is still somebody's
+secret and a near-miss is a hint. `app/errors.py` already declined to log
+request headers for this reason; there is now a test that a refusal leaves a
+trace in the log without the attempt in it, and another asserting the value
+never appears in the OpenAPI schema.
