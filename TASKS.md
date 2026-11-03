@@ -552,7 +552,7 @@ so it cannot be used to guess the code quickly.*
 unchanged, because they are referenced from DECISIONS.md and from commit
 messages.*
 
-- [ ] **8.0 The access code screen, as the shell** — the app is link-only, so
+- [x] **8.0 The access code screen, as the shell** — the app is link-only, so
   this is the front door and not a step in the middle: with no valid code,
   nothing else renders at all. Asked for once, remembered in the browser, with
   a clear message when it's wrong. Validated by the backend, never compared in
@@ -561,8 +561,24 @@ messages.*
   reveals the app and survives a reload; a wrong one explains itself.
   *It is also the first thing Phase 9 audits: labelled input, visible focus,
   the error announced to a screen reader rather than only coloured red.*
+  *Verified in a real browser with both halves running, not only in jsdom.
+  With no code: the protected app is **not in the DOM at all** -- checked
+  against `innerHTML`, not just what is visible, because hidden content is
+  still reachable by a screen reader and still in the page source. A wrong
+  code: `role="alert"`, `aria-invalid="true"`, the error tied to the field
+  with `aria-describedby`, focus returned to the input, nothing stored. The
+  right code: app revealed, and it survives a reload. Backend stopped: says
+  it cannot reach A11y-Lens, does **not** blame the code, keeps the code, and
+  offers "Try again".*
+  *The code is held in sessionStorage, so it is forgotten when the tab closes
+  -- more friction than localStorage, chosen for the borrowed computer.*
+  *A mutation found a real hole: opening the gate before the backend confirms
+  a stored code passed all 21 tests, because every one of them waited for the
+  settled state. In a browser that is a flash of the real app for anybody
+  whose code is no longer valid. Two tests now assert what is on screen
+  mid-flight, and the mutation fails.*
 
-- [ ] **8.1 The saved demo report** — a real saved report from a real scan,
+- [x] **8.1 The saved demo report** — a real saved report from a real scan,
   stored as a JSON file in the frontend and rendered instantly with **no
   backend call**. It sits *inside* the access-code shell from 8.0: not public,
   but the first thing anyone you give the code to sees. Worth building early
@@ -573,40 +589,159 @@ messages.*
   *See DECISIONS.md, 2026-11-03: a file in the frontend bundle has an ordinary
   public URL, so this report is obscured rather than gated. Decide then whether
   to serve it from behind the code check instead.*
+  *Done, with one limit stated plainly below.*
+  *The findings are real: `scripts/make_demo_report.py` runs the actual scanner
+  against `backend/tests/fixtures/broken.html` -- same browser, same axe-core,
+  same code path as a live scan -- and gets 3 critical, 2 serious, 1 moderate.
+  The explanations and fixes were written by hand
+  (`scripts/add_demo_explanations.py`) because there is no API budget, and the
+  UI says so on screen wherever the demo is shown.*
+  *A test renders the demo with `fetch` replaced by something that throws, so
+  a component reaching for the network fails the test rather than passing
+  because the backend happened to be up. Confirmed live too: loading the app
+  makes exactly one backend request, `POST /verify`, and no `/scan`.*
+  *THE LIMIT: "renders with the backend completely switched off" holds for the
+  report itself, but not for the whole app, because task 8.0's gate has to ask
+  the backend whether a code is valid before anything renders. With the
+  backend asleep a visitor sees "Could not reach A11y-Lens. Try again."
+  rather than the demo. That defeats part of why this task was scheduled
+  early. See task 8.10.*
 
-- [ ] **8.2 The URL input form** — labelled input, submit button, client-side
+- [x] **8.2 The URL input form** — labelled input, submit button, client-side
   validation, disabled while submitting. ~1 hr
   **Done when:** submitting a URL calls the backend and the result appears;
   submitting empty shows an inline message without calling it.
+  *A labelled field, a description, and the browser's own validation bubble
+  turned off so ours is the only message -- the native bubble cannot be styled,
+  is not reliably announced, and vanishes the moment the field is touched.*
+  *`https://` is added when no scheme was typed, because `example.com` is what
+  people actually type. The frontend's checks are deliberately much weaker
+  than `app/url_safety.py` and are not a security measure: they catch an empty
+  box, a sentence, or a `file://` path so somebody who mistypes is told in
+  milliseconds rather than seconds. Everything else is the backend's call.*
+  *Verified live: a loopback address is refused by the backend with a real
+  explanation, not a crash.*
 
-- [ ] **8.4 The loading state** — a scan takes several seconds and a cold
+- [x] **8.4 The loading state** — a scan takes several seconds and a cold
   backend takes longer, so silence reads as breakage. Show continuous progress
   and say what's happening. ~45 min
   **Done when:** a real scan shows unbroken feedback from submit to result.
+  *Stages, not a spinner: "Opening the page", then "Checking it against the
+  accessibility rules", then an honest "still going" after eight seconds.*
+  *No percentage, because the backend reports nothing until it finishes and
+  any number would be invented. `aria-valuenow` is deliberately absent.*
+  *It warns that a first scan after a quiet period is slower, since the
+  backend will be on a host that sleeps -- otherwise the wait reads as a
+  fault. Verified live against a real 15-second scan.*
+  *The pulse is `motion-safe:` only, so it stops for anybody whose system asks
+  for reduced motion.*
 
-- [ ] **8.5 The results list** — grouped by severity, worst first, count per
+- [x] **8.5 The results list** — grouped by severity, worst first, count per
   group. ~1 hr
   **Done when:** scanning a messy real site renders a readable grouped list.
+  *Grouped by severity, worst first, count per group, empty levels left out.
+  Each group is a section with its own heading, so a screen reader user can
+  jump between them instead of walking the list.*
+  *Severity is a word, never only a colour -- WCAG 1.4.1, and roughly one man
+  in twelve cannot reliably separate the red from the grey. A mutation that
+  removed the word and kept the colour failed 8 tests.*
+  *The summary is a sentence rather than four coloured chips: chips would put
+  the information back into colour, and a row of numbers means nothing to
+  somebody new.*
 
-- [ ] **8.6 The single-issue view** — selector, offending HTML, Claude's
+- [x] **8.6 The single-issue view** — selector, offending HTML, Claude's
   explanation, the corrected snippet in a code block with a copy button, and a
   link to the WCAG or MDN reference. ~1 hr
   **Done when:** you can read one issue end to end and copy its fix.
+  *Order on screen is what is wrong, who it affects, where it is, the corrected
+  code, then the reference. "Who" sits second because it is the part that
+  persuades somebody to act -- a developer skimming forty findings chooses
+  from the consequence, not the rule id.*
+  *The copy button reports failure rather than silently doing nothing: the
+  clipboard can be refused, and somebody walking away believing they have the
+  code is worse than being told it did not work. "Copied" is a live region, so
+  it is announced and not only seen.*
+  *A test found a real fault here: the severity groups and the issue cards
+  were both level-3 headings, which is `heading-order` -- one of the six
+  faults this very report describes. Cards now step down to h4/h5/h6, and a
+  test walks every heading on the page asserting no level is skipped.*
 
-- [ ] **8.7 Show the guesses as guesses** — render the assumptions from 5.4
+- [x] **8.7 Show the guesses as guesses** — render the assumptions from 5.4
   visibly against the snippet, so nobody pastes an invented `alt` text
   believing the tool knew what the image showed. Decide the wording; "Claude
   assumed…" is clearer than a warning triangle. ~1 hr
   **Done when:** a missing-`alt` fix displays its assumption in a way a
   stranger reads before copying, confirmed by showing it to one person.
+  *The assumptions render directly under the snippet in a bordered block:
+  never collapsed, never a tooltip, never colour alone. Contract rule 5.*
+  *The count is in the heading ("This fix makes 2 assumptions") so none is
+  missed, and the block is absent entirely when a fix involved no guessing --
+  an empty box on a mechanical fix would train people to ignore the box,
+  which is the one thing it must not do.*
+  *Every one of the six demo fixes declares at least one assumption, asserted
+  by a test: a demo full of confident code with no caveats would teach exactly
+  the habit this task exists to prevent.*
+  *Still outstanding from the task's own "done when": showing it to one person
+  to confirm a stranger reads it before copying.*
 
-- [ ] **8.8 Every error state** — invalid URL, blocked URL, page unreachable,
+- [x] **8.10 Decide what a visitor sees while the backend is asleep** — found
+  while verifying 8.1, which was scheduled early precisely so the app would be
+  useful with the backend down. It is not, because 8.0's gate must ask the
+  backend before anything renders, so a sleeping free-tier host shows "Could
+  not reach A11y-Lens" instead of the demo. Three options, and this is a
+  decision rather than a bug: (a) leave it, and accept a wait on the first
+  visit while the host wakes; (b) let a **remembered** code show the demo
+  while the backend is unreachable, and re-check before any scan -- the demo
+  costs nothing and needs no backend, scanning is what has to be gated; (c)
+  keep the gate strict and show a proper "waking up, this takes about 30
+  seconds" screen rather than an error. ~30 min once decided
+  **Done when:** loading the app with the backend stopped produces whichever
+  of those three was chosen, and a test holds it there.
+  *Worth deciding before Phase 10, because the deploy host is what makes this
+  real. (c) is the smallest honest fix; (b) is the one that actually delivers
+  what 8.1 was for.*
+
+  *Decided by Vernika on 3 Nov 2026: option (c), keep the gate strict and
+  replace the error with a waking screen. The demo stays behind the code.*
+  *Five tries over 48 seconds, widening gaps, then it gives up and says the
+  server may be down rather than asleep -- a screen that promises "waking up"
+  forever is a spinner with better manners.*
+  *The retries poll `/health`, never `/verify`. `/verify` is rate limited to
+  five a minute shared with everything else, and five retries is exactly that
+  budget: a gate that retried the real call would spend the whole allowance
+  waking the server and then be refused for rate limiting the moment it
+  worked, causing the error it exists to avoid.*
+  *Verified live, with the backend genuinely stopped: the waking screen
+  appears, and when the backend is started mid-wait the app lets itself in
+  **10 seconds later with no clicks**. Left alone with no backend at all, it
+  counted 1 to 5 and handed back the form with the honest message.*
+  *Six mutations tried, five caught. The sixth -- treating a 401 as "asleep"
+  -- changed nothing, because `unauthorized` is checked before `looksAsleep`.
+  Swapping those two, which is the reachable version of that mistake, fails
+  five tests. That ordering is what stops the gate becoming a waiting room
+  that eventually lets anybody in.*
+
+- [x] **8.8 Every error state** — invalid URL, blocked URL, page unreachable,
   scan timed out, backend asleep, wrong access code, daily limit reached. Seven
   cases, each with a plain message saying what to do next. ~1 hr
   **Done when:** you can trigger all seven and none shows a raw status code or
   an empty screen.
+  *Thirteen cases, not seven: the contract's ten codes plus network failure,
+  timeout and a malformed reply. A code with no case falls through to a bare
+  status number, which is what this task forbids.*
+  *The backend's message is shown unedited (contract rule 1) and the frontend
+  adds what to **do** -- the backend knows what went wrong, only the frontend
+  knows what is on screen.*
+  *Two faults the live check caught that the tests could not: the advice
+  repeated a sentence the backend had just said, and the daily-limit advice
+  pointed at "the example report further down", which a real scan had already
+  replaced. Both fixed; a test now fails if any sentence appears twice.*
+  *Retry is offered only where retrying could work. A blocked address will be
+  blocked again, and a button that cannot work is worse than no button.*
+  *A 401 mid-session drops the stored code and offers the gate again, because
+  carrying on would show a form that cannot work.*
 
-- [ ] **8.9 The clean-page state** — what a page with no violations looks like,
+- [x] **8.9 The clean-page state** — what a page with no violations looks like,
   including the honest caveat that automated tools catch roughly a third of
   real accessibility problems. ~45 min
   **Done when:** scanning a well-built page shows a clear "nothing found"
@@ -619,6 +754,15 @@ messages.*
 `CLAUDE.md` requires this, it's the one bug an accessibility tool cannot ship
 with, and for a portfolio piece it's the centrepiece — a reviewer will tab
 through your app specifically to check.
+  *Its own panel, not an empty list: "nothing to report", then the caveat in
+  bold, then what to actually do next -- try the keyboard, turn on a screen
+  reader.*
+  *The caveat is part of the result rather than small print, because this is
+  the screen where somebody is most likely to stop looking. Contract 2.1: an
+  empty `issues` array means no **detectable** issues.*
+  *The one-third figure is not rhetorical here: `broken.html` carries a
+  documented blind spot -- a field named only by its placeholder -- that
+  axe-core passes outright. A page built that way produces this screen.*
 
 - [ ] **9.1 Full keyboard operation** — tab order follows reading order, focus
   always visibly outlined, Enter and Space behave, nothing mouse-only. ~1 hr
@@ -629,6 +773,15 @@ through your app specifically to check.
   `<label>` associations, no skipped heading levels, and `<button>` rather than
   clickable `<div>`s. ~1 hr
   **Done when:** your own axe scan of `localhost:5173` returns zero violations.
+  *Measured early, 3 Nov 2026, while verifying Phase 8: our own axe-core
+  (the vendored 4.14.0, the same build the scanner uses) run against
+  `localhost:5173` returned **zero WCAG A/AA violations** on two states --
+  the demo report and a real scan with a failure notice above it -- with 25
+  and 26 passes. Heading levels ran 1,2,3,4,5,5,6... with no skips, and no
+  element used a positive tabindex. That is this task's "done when" already
+  met once, but it was one manual run on two screens, so the task stays open:
+  the loading, clean and error screens are unchecked, and 9.5 is what stops
+  it regressing.*
 
 - [ ] **9.3 Announce results to screen readers** — results appear without a
   page reload, so a screen reader user gets no notification unless you add a

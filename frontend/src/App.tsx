@@ -1,36 +1,35 @@
 /**
- * A placeholder, on purpose.
+ * What sits behind the access gate.
  *
- * Phase 7 is the skeleton: the toolchain, the palette, the test runner and
- * the API client. The first real screen is task 8.0, the access code gate,
- * and building any of it here would mean building it outside the shell it has
- * to live inside.
- *
- * What this page does do is prove the parts are connected -- Tailwind's
- * palette renders, React mounts, the build type-checks -- which is the only
- * claim Phase 7 makes.
+ * The saved demo report is what the panel starts with, so the first thing
+ * somebody sees is the tool working rather than an empty form. Their first
+ * scan replaces it.
  */
+
+import { demoReport, EXPLANATIONS_ARE_HAND_WRITTEN } from './demo/demoReport'
+import ScanPanel from './scan/ScanPanel'
+
 export default function App() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-6 px-6 py-16">
-      <div>
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-6 py-12">
+      <header>
         <h1 className="text-3xl font-semibold text-ink">A11y-Lens</h1>
         <p className="mt-2 text-muted">
           Scans a web page for accessibility problems and explains them in plain language.
         </p>
-      </div>
+      </header>
 
-      <p className="rounded-md border border-surface bg-surface p-4 text-ink">
-        The frontend skeleton is in place. The app itself starts at task 8.0, the
-        access code screen.
-      </p>
+      <ScanPanel
+        initialReport={demoReport}
+        initialReportIsHandWritten={EXPLANATIONS_ARE_HAND_WRITTEN}
+      />
 
-      <p className="text-sm text-muted">
-        Phase 7 of 11 &middot;{' '}
-        <a className="text-primary underline" href="https://github.com/vernikas-ctrl/A11y-Lens">
-          github.com/vernikas-ctrl/A11y-Lens
-        </a>
-      </p>
+      <footer className="border-t border-surface pt-4 text-sm text-muted">
+        <p>
+          Automated tools find roughly a third of accessibility problems. A clean report is a
+          good sign, not a guarantee.
+        </p>
+      </footer>
     </main>
   )
 }

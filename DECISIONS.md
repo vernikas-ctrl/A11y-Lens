@@ -925,3 +925,239 @@ about to rely on it, and they will be reading one of those.
 
 See the 2026-11-03 entry "The app is link-only, and the access code is the
 front door". A front door with a glass panel is still worth having.
+
+---
+
+## 2026-11-03 — The access code is held in sessionStorage, not localStorage
+
+**Decided:** once a code is accepted it is kept in `sessionStorage`, so it is
+forgotten when the tab closes and has to be typed again on the next visit.
+
+`localStorage` would be kinder to the handful of people who have the link:
+type it once, ever. The reason not to is the borrowed or shared computer,
+where a remembered code is a code left behind for whoever sits down next.
+Closing a tab is something people already do without being told; clearing
+site data is not.
+
+**The cost is real and it is friction, not security.** Anybody who can open
+developer tools can read the code out of the bundle anyway, so this does not
+make the app harder to break into. What it does is stop a code lingering on a
+machine after the person who used it has walked away.
+
+**A remembered code is confirmed with the backend, never trusted.** Anything
+can be written into `sessionStorage` from the console, so a gate that believed
+what it found there would not be a gate. The app renders only after `/verify`
+has answered.
+
+**Every storage access is wrapped.** Safari in private browsing and a browser
+with site data blocked *throw* rather than returning nothing, and an unhandled
+throw at startup would blank the whole app. Failing to remember is treated as
+having nothing to remember, which puts the person exactly where they would
+have been anyway.
+
+---
+
+## 2026-11-03 — The gate tells "wrong code" apart from "backend asleep"
+
+**Decided:** `AccessGate` has four states -- checking, locked, open and
+offline -- rather than the obvious two.
+
+A gate that only knows in and out has to pick a message for every failure, and
+whichever it picks is wrong half the time. Telling somebody their code is
+wrong when the truth is that a free-tier backend is still waking up sends them
+hunting for a typo that is not there; the app is going to be deployed on
+exactly that kind of host.
+
+So: `unauthorized` means the code is wrong, and only then is the stored code
+discarded. Anything else -- a timeout, a refused connection, a 500 -- means we
+do not know, so the code is **kept**, the message says the service could not
+be reached, and the button says "Try again" rather than "Continue". Being
+logged out because the wifi dropped would be its own small injustice.
+
+**A fifth consideration, found by a mutation:** the gate must show nothing of
+the app while a stored code is still being checked. Setting it open first and
+letting the check close it again passed all 21 tests, because every test
+waited for the settled state. In a browser that is a visible flash of the real
+application for the one person it is meant to exclude -- and on a slow
+connection, not a flash at all. `status` now starts at `checking` and the two
+tests that catch it assert what is on screen mid-request.
+
+---
+
+## 2026-11-03 — The demo report has real findings and hand-written explanations
+
+**Decided:** `frontend/src/demo/report.json` is genuine axe-core output from a
+real scan. The explanations and fixes in it were written by a person, and the
+app says so on screen.
+
+There is no API budget, so the alternative was a demo with six findings and
+six empty explanations. That would have left tasks 8.6 and 8.7 with nothing to
+render, and shown nobody what the tool is actually for — the findings are the
+part axe-core already gives you for free; the explanations are the point.
+
+**Where the line is drawn:** `scripts/make_demo_report.py` runs the real
+scanner against `backend/tests/fixtures/broken.html` — same Playwright, same
+axe-core, same code path — so the severities, selectors, rule ids and HTML are
+all genuine. `scripts/add_demo_explanations.py` then fills in prose written to
+the same rules `docs/prompt.md` sets for the model: what, who, a corrected
+snippet, and every guess declared.
+
+**Why it is labelled rather than quietly presented:** the entire argument of
+task 8.7 is that people should not paste generated code without reading what
+was assumed. A tool that was vague about the provenance of its own demo text
+would be teaching the opposite lesson on the first screen anybody sees.
+`EXPLANATIONS_ARE_HAND_WRITTEN` drives a notice above the report; if an API
+key ever arrives, the flag becomes false and the notice disappears by itself.
+
+**The provenance lives in TypeScript, not in the JSON**, because the JSON is
+the contract's `Report` shape and nothing else. A `hand_written: true` field
+inside it would make the demo stop being an example of what the backend
+actually returns, which is most of its value.
+
+**Why a local fixture rather than a real website:** a demo report of somebody
+else's site ships their mistakes as our marketing, and it goes stale the day
+they fix it. `broken.html` has six planted faults that do not move, each
+documented, plus a deliberate blind spot the scanner cannot see — which an
+accessibility tool is better off demonstrating than hiding.
+
+---
+
+## 2026-11-03 — The gate and the sleeping backend are in conflict
+
+**Found, not decided.** Recorded here because it is a real tension between two
+tasks that both seemed obviously right.
+
+Task 8.1 schedules the saved demo report early, with the stated reason that it
+"works while the free-tier backend is asleep". Task 8.0 makes the access code
+the shell: nothing renders until the backend has confirmed the code. Both were
+built as specified, and together they mean that when the backend is asleep a
+visitor sees "Could not reach A11y-Lens. Try again." — exactly the situation
+the demo report was meant to cover.
+
+Nothing is broken. The report itself needs no backend, which a test proves by
+rendering it with `fetch` replaced by something that throws. The gate is the
+only thing standing in the way, and it is doing what it was asked to do.
+
+This is a decision about what the app should be, not a defect to patch
+quietly, so it is task 8.10 rather than a silent fix. The honest options are:
+accept the wait; let a remembered code show the demo while the backend is
+unreachable and re-check before any scan; or keep the gate strict and replace
+the error with a "waking up, about 30 seconds" screen.
+
+**Worth noticing for its own sake:** this only surfaced because the live check
+was run with the backend genuinely stopped rather than assumed. Both tasks
+pass their own tests in isolation.
+
+---
+
+## 2026-11-03 — Error messages say what to do, and never say it twice
+
+**Decided:** the backend's `message` is rendered unedited, and the frontend
+adds a second line saying what to try next.
+
+Contract rule 1 says the frontend branches on `code` and never on `message`.
+Rewriting the backend's words here would put two places in charge of what
+somebody reads, and they would drift. But "That page could not be reached" is
+a diagnosis, not an instruction — the backend knows what went wrong, and only
+the frontend knows what is on screen and what the person could do about it.
+
+**Every advice line is strictly additive**, which took two corrections that
+only the live check could have produced. The backend says "This is deliberate,
+not a fault." and the first draft of the advice said it again two lines later.
+Worse, the daily-limit advice pointed at "the example report further down" —
+true on first load, false by the time anybody has actually used three scans,
+because a real scan replaces the demo. A test now splits a rendered failure
+into sentences and fails if any appears twice; the second fault is guarded by
+having written the rule down here.
+
+**Thirteen cases rather than the seven the task asked for**, because the shape
+costs nothing once it exists and an unhandled code falls through to a bare
+status number — exactly what the task forbids.
+
+**Retry is offered only where retrying could work.** A blocked address will be
+blocked again. A button that cannot possibly succeed is worse than no button:
+it invites somebody to keep pressing it.
+
+---
+
+## 2026-11-03 — The progress indicator refuses to invent a percentage
+
+**Decided:** named stages and an indeterminate bar, with `aria-valuenow`
+deliberately absent.
+
+A scan takes about four seconds warm and considerably longer against a host
+that has been asleep. Silence for that long reads as breakage, and the second
+thing somebody does when a page seems broken is press the button again.
+
+A percentage would be a lie — the backend reports nothing at all until it is
+finished, so any number would be animation rather than information. Stages
+say roughly where the scan is without claiming precision, and the last one
+admits it is taking longer than usual rather than stalling at 90%.
+
+**The pulse is `motion-safe:` only.** Looping animation is genuinely
+unpleasant with a vestibular disorder, and a progress indicator is the one
+thing somebody has to sit and watch. The bar still shows; it just does not
+move. Task 9.6 covers the rest of the app — this is here because it would
+otherwise have shipped as a known fault in the same change that added it.
+
+---
+
+## 2026-11-03 — The frontend's URL check is deliberately weaker than the backend's
+
+**Decided:** `urlInput.ts` catches an empty box, a sentence, a non-http
+scheme and a hostname with no dot. Nothing else.
+
+`app/url_safety.py` resolves DNS and refuses private, loopback, link-local and
+reserved addresses, and it stays the only thing that decides whether a scan
+happens. The frontend's job here is purely speed: somebody who mistypes is
+told in milliseconds instead of waiting for a round trip.
+
+**It is not a security measure, and writing it as one would make it worse.**
+Reimplementing the SSRF rules in a file the browser downloads would produce
+two sets of rules that drift, with the weaker and more visible one looking
+authoritative. Confirmed live: typing `http://127.0.0.1:8000` reaches the
+backend and comes back refused, with a real explanation.
+
+---
+
+## 2026-11-03 — A sleeping backend gets a waiting room, not an error
+
+**Vernika's decision**, from the three options raised when 8.1 and 8.0 turned
+out to conflict: keep the gate strict, and replace the flat error with a
+screen that waits.
+
+The demo report therefore stays behind the access code, which means task 8.1's
+original justification — "it works while the free-tier backend is asleep" — is
+not delivered and will not be. That is a real cost, accepted knowingly: the
+alternative was letting a remembered code show the demo without the backend
+confirming it, and the gate being unconditional is worth more than the demo
+being reachable thirty seconds sooner.
+
+**What a visitor sees instead:** "Waking the server up. This usually takes
+about 30 seconds", with an explanation that a free host stops the service when
+nobody has used it and that their code has not been rejected. It is styled as
+information, not as an error — dressing a cold start in red teaches people to
+distrust a working app.
+
+**It gives up after five tries across 48 seconds** and says the server may be
+down rather than asleep. A screen that promises "waking up" indefinitely is a
+spinner with better manners, and after a minute the likely explanation has
+genuinely changed.
+
+**The retries poll `/health`, never `/verify`.** This is the part worth
+remembering. `/verify` is rate limited to five requests a minute, shared with
+every other endpoint, and five retries is exactly that budget — so a gate that
+retried the real call would spend the entire allowance waking the server up
+and then be refused for rate limiting at the exact moment it succeeded. It
+would reliably cause the error it exists to prevent. `/health` is deliberately
+exempt from the limiter and does no work, which makes it the right question to
+ask repeatedly: not "is my code valid" but "are you there yet".
+
+**The order of the checks is load-bearing.** `unauthorized` is handled before
+`looksAsleep`. Reversed, a refusal would be answered with "waiting for the
+server", and the gate would become a waiting room that eventually lets anybody
+in. Five tests fail if the two are swapped, and a comment in the code says so.
+
+Verified with the backend genuinely stopped rather than mocked: the waking
+screen appears, and starting the backend mid-wait opened the app ten seconds
+later with no clicks at all.

@@ -19,5 +19,13 @@ export default defineConfig({
     // on magic.
     globals: false,
     css: true,
+    // Pinned, so the suite does not depend on whether the person running it
+    // happens to have a .env file -- and so a real access code can never
+    // influence a test result. The backend's conftest.py does the same thing
+    // for the same reason.
+    env: {
+      VITE_API_BASE_URL: 'http://127.0.0.1:8000',
+      VITE_ACCESS_CODE: '',
+    },
   },
 })
