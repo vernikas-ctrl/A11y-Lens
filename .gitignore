@@ -20,6 +20,7 @@ dist/
 dist-ssr/
 .vite/
 *.local
+coverage/
 
 # Playwright
 playwright-report/
