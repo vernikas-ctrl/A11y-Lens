@@ -607,15 +607,34 @@ messages.*
   rather than the demo. That defeats part of why this task was scheduled
   early. See task 8.10.*
 
-- [ ] **8.2 The URL input form** — labelled input, submit button, client-side
+- [x] **8.2 The URL input form** — labelled input, submit button, client-side
   validation, disabled while submitting. ~1 hr
   **Done when:** submitting a URL calls the backend and the result appears;
   submitting empty shows an inline message without calling it.
+  *A labelled field, a description, and the browser's own validation bubble
+  turned off so ours is the only message -- the native bubble cannot be styled,
+  is not reliably announced, and vanishes the moment the field is touched.*
+  *`https://` is added when no scheme was typed, because `example.com` is what
+  people actually type. The frontend's checks are deliberately much weaker
+  than `app/url_safety.py` and are not a security measure: they catch an empty
+  box, a sentence, or a `file://` path so somebody who mistypes is told in
+  milliseconds rather than seconds. Everything else is the backend's call.*
+  *Verified live: a loopback address is refused by the backend with a real
+  explanation, not a crash.*
 
-- [ ] **8.4 The loading state** — a scan takes several seconds and a cold
+- [x] **8.4 The loading state** — a scan takes several seconds and a cold
   backend takes longer, so silence reads as breakage. Show continuous progress
   and say what's happening. ~45 min
   **Done when:** a real scan shows unbroken feedback from submit to result.
+  *Stages, not a spinner: "Opening the page", then "Checking it against the
+  accessibility rules", then an honest "still going" after eight seconds.*
+  *No percentage, because the backend reports nothing until it finishes and
+  any number would be invented. `aria-valuenow` is deliberately absent.*
+  *It warns that a first scan after a quiet period is slower, since the
+  backend will be on a host that sleeps -- otherwise the wait reads as a
+  fault. Verified live against a real 15-second scan.*
+  *The pulse is `motion-safe:` only, so it stops for anybody whose system asks
+  for reduced motion.*
 
 - [x] **8.5 The results list** — grouped by severity, worst first, count per
   group. ~1 hr
@@ -682,13 +701,27 @@ messages.*
   real. (c) is the smallest honest fix; (b) is the one that actually delivers
   what 8.1 was for.*
 
-- [ ] **8.8 Every error state** — invalid URL, blocked URL, page unreachable,
+- [x] **8.8 Every error state** — invalid URL, blocked URL, page unreachable,
   scan timed out, backend asleep, wrong access code, daily limit reached. Seven
   cases, each with a plain message saying what to do next. ~1 hr
   **Done when:** you can trigger all seven and none shows a raw status code or
   an empty screen.
+  *Thirteen cases, not seven: the contract's ten codes plus network failure,
+  timeout and a malformed reply. A code with no case falls through to a bare
+  status number, which is what this task forbids.*
+  *The backend's message is shown unedited (contract rule 1) and the frontend
+  adds what to **do** -- the backend knows what went wrong, only the frontend
+  knows what is on screen.*
+  *Two faults the live check caught that the tests could not: the advice
+  repeated a sentence the backend had just said, and the daily-limit advice
+  pointed at "the example report further down", which a real scan had already
+  replaced. Both fixed; a test now fails if any sentence appears twice.*
+  *Retry is offered only where retrying could work. A blocked address will be
+  blocked again, and a button that cannot work is worse than no button.*
+  *A 401 mid-session drops the stored code and offers the gate again, because
+  carrying on would show a form that cannot work.*
 
-- [ ] **8.9 The clean-page state** — what a page with no violations looks like,
+- [x] **8.9 The clean-page state** — what a page with no violations looks like,
   including the honest caveat that automated tools catch roughly a third of
   real accessibility problems. ~45 min
   **Done when:** scanning a well-built page shows a clear "nothing found"
@@ -701,6 +734,15 @@ messages.*
 `CLAUDE.md` requires this, it's the one bug an accessibility tool cannot ship
 with, and for a portfolio piece it's the centrepiece — a reviewer will tab
 through your app specifically to check.
+  *Its own panel, not an empty list: "nothing to report", then the caveat in
+  bold, then what to actually do next -- try the keyboard, turn on a screen
+  reader.*
+  *The caveat is part of the result rather than small print, because this is
+  the screen where somebody is most likely to stop looking. Contract 2.1: an
+  empty `issues` array means no **detectable** issues.*
+  *The one-third figure is not rhetorical here: `broken.html` carries a
+  documented blind spot -- a field named only by its placeholder -- that
+  axe-core passes outright. A page built that way produces this screen.*
 
 - [ ] **9.1 Full keyboard operation** — tab order follows reading order, focus
   always visibly outlined, Enter and Space behave, nothing mouse-only. ~1 hr
@@ -711,6 +753,15 @@ through your app specifically to check.
   `<label>` associations, no skipped heading levels, and `<button>` rather than
   clickable `<div>`s. ~1 hr
   **Done when:** your own axe scan of `localhost:5173` returns zero violations.
+  *Measured early, 3 Nov 2026, while verifying Phase 8: our own axe-core
+  (the vendored 4.14.0, the same build the scanner uses) run against
+  `localhost:5173` returned **zero WCAG A/AA violations** on two states --
+  the demo report and a real scan with a failure notice above it -- with 25
+  and 26 passes. Heading levels ran 1,2,3,4,5,5,6... with no skips, and no
+  element used a positive tabindex. That is this task's "done when" already
+  met once, but it was one manual run on two screens, so the task stays open:
+  the loading, clean and error screens are unchecked, and 9.5 is what stops
+  it regressing.*
 
 - [ ] **9.3 Announce results to screen readers** — results appear without a
   page reload, so a screen reader user gets no notification unless you add a

@@ -1047,3 +1047,73 @@ the error with a "waking up, about 30 seconds" screen.
 **Worth noticing for its own sake:** this only surfaced because the live check
 was run with the backend genuinely stopped rather than assumed. Both tasks
 pass their own tests in isolation.
+
+---
+
+## 2026-11-03 — Error messages say what to do, and never say it twice
+
+**Decided:** the backend's `message` is rendered unedited, and the frontend
+adds a second line saying what to try next.
+
+Contract rule 1 says the frontend branches on `code` and never on `message`.
+Rewriting the backend's words here would put two places in charge of what
+somebody reads, and they would drift. But "That page could not be reached" is
+a diagnosis, not an instruction — the backend knows what went wrong, and only
+the frontend knows what is on screen and what the person could do about it.
+
+**Every advice line is strictly additive**, which took two corrections that
+only the live check could have produced. The backend says "This is deliberate,
+not a fault." and the first draft of the advice said it again two lines later.
+Worse, the daily-limit advice pointed at "the example report further down" —
+true on first load, false by the time anybody has actually used three scans,
+because a real scan replaces the demo. A test now splits a rendered failure
+into sentences and fails if any appears twice; the second fault is guarded by
+having written the rule down here.
+
+**Thirteen cases rather than the seven the task asked for**, because the shape
+costs nothing once it exists and an unhandled code falls through to a bare
+status number — exactly what the task forbids.
+
+**Retry is offered only where retrying could work.** A blocked address will be
+blocked again. A button that cannot possibly succeed is worse than no button:
+it invites somebody to keep pressing it.
+
+---
+
+## 2026-11-03 — The progress indicator refuses to invent a percentage
+
+**Decided:** named stages and an indeterminate bar, with `aria-valuenow`
+deliberately absent.
+
+A scan takes about four seconds warm and considerably longer against a host
+that has been asleep. Silence for that long reads as breakage, and the second
+thing somebody does when a page seems broken is press the button again.
+
+A percentage would be a lie — the backend reports nothing at all until it is
+finished, so any number would be animation rather than information. Stages
+say roughly where the scan is without claiming precision, and the last one
+admits it is taking longer than usual rather than stalling at 90%.
+
+**The pulse is `motion-safe:` only.** Looping animation is genuinely
+unpleasant with a vestibular disorder, and a progress indicator is the one
+thing somebody has to sit and watch. The bar still shows; it just does not
+move. Task 9.6 covers the rest of the app — this is here because it would
+otherwise have shipped as a known fault in the same change that added it.
+
+---
+
+## 2026-11-03 — The frontend's URL check is deliberately weaker than the backend's
+
+**Decided:** `urlInput.ts` catches an empty box, a sentence, a non-http
+scheme and a hostname with no dot. Nothing else.
+
+`app/url_safety.py` resolves DNS and refuses private, loopback, link-local and
+reserved addresses, and it stays the only thing that decides whether a scan
+happens. The frontend's job here is purely speed: somebody who mistypes is
+told in milliseconds instead of waiting for a round trip.
+
+**It is not a security measure, and writing it as one would make it worse.**
+Reimplementing the SSRF rules in a file the browser downloads would produce
+two sets of rules that drift, with the weaker and more visible one looking
+authoritative. Confirmed live: typing `http://127.0.0.1:8000` reaches the
+backend and comes back refused, with a real explanation.
