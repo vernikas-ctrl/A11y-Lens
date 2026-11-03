@@ -31,7 +31,7 @@ import time
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
 from app.errors import ApiError
@@ -128,6 +128,31 @@ WCAG_CRITERION_TAG = re.compile(r"^wcag(\d{3,})$")
 FRAME_SELECTOR_SEPARATOR = " >>> "
 
 
+class Explanation(TypedDict):
+    """Why this matters, as section 2.2 defines it: two fields of plain prose.
+
+    Written by `app.explainer` in Phase 5. Split rather than one blob because
+    the UI shows `who` more prominently than `what` -- the human consequence is
+    the part that persuades anybody to do the work.
+    """
+
+    what: str
+    who: str
+
+
+class Fix(TypedDict):
+    """The corrected code, and every guess that went into it.
+
+    `assumptions` may be empty, and an empty list means something specific:
+    the fix is mechanical and involved no invention. A non-empty one must be
+    shown beside the snippet -- the contract does not allow the UI to hide it.
+    """
+
+    language: str
+    snippet: str
+    assumptions: list[str]
+
+
 class Issue(TypedDict):
     """One thing to fix, exactly as docs/api-contract.md section 2.2 defines it."""
 
@@ -138,8 +163,11 @@ class Issue(TypedDict):
     reference_url: str
     selector: str
     html: str
-    explanation: None
-    fix: None
+    # Null together or populated together, never one without the other. The
+    # scanner always produces them null; `app.explainer` fills them in, and the
+    # endpoint is what puts the two steps in order.
+    explanation: Explanation | None
+    fix: Fix | None
 
 
 def _wcag_criteria(tags: list[str]) -> list[str]:
@@ -292,7 +320,11 @@ class Report(TypedDict):
     scanned_at: str
     scan_duration_ms: int
     explanations_available: bool
-    explanations_unavailable_reason: str
+    # NotRequired, because the contract says this key is present *only* when
+    # explanations_available is false. Sending `"reason": null` alongside
+    # working explanations would be a different shape from the documented one,
+    # and the frontend is entitled to read the key's presence as the signal.
+    explanations_unavailable_reason: NotRequired[str]
     summary: dict[str, int]
     issues: list[Issue]
 
