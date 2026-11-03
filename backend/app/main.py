@@ -16,13 +16,16 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.requests import Request
 
+from app.auth import AccessCode
 from app.config import ConfigError, get_settings
-from app.errors import register_error_handlers, register_request_logging
-from app.explainer import Explainer
+from app.errors import ApiError, register_error_handlers, register_request_logging
+from app.explainer import UNAVAILABLE_LIMIT, Explainer, mark_unavailable
+from app.limits import DailyBudget, RateLimiter, client_key
 from app.scanner import Report, Scanner
 from app.url_safety import MAX_URL_LENGTH, check_url
 
@@ -60,6 +63,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+
+# The same logger name every other module uses, so one configuration covers
+# the lot and a filter applied to "a11y_lens" catches everything.
+logger = logging.getLogger("a11y_lens")
 
 # --- Task 4.6: one browser for the whole server -----------------------------
 #
@@ -154,6 +161,75 @@ app.add_middleware(
 )
 
 
+# --- Phase 6: the gate and the ceiling --------------------------------------
+#
+# Three checks, and the order they run in is the design. Cheapest and most
+# protective first:
+#
+#   1. rate limit -- counted per address, so a flood cannot even reach the
+#      access code check, let alone a DNS lookup or a browser.
+#   2. access code -- a timing-safe comparison, and the front door: the app is
+#      link-only, so there is nothing to see without it.
+#   3. daily ceiling -- checked here, but *taken* inside the explainer, at the
+#      moment money is about to be spent. A cached page costs nothing.
+#   4. URL safety -- last of the checks, because it resolves DNS. Real work is
+#      not worth doing for a request that was never allowed.
+require_access_code = AccessCode(settings.access_code.get_secret_value())
+daily_budget = DailyBudget(settings.daily_scan_limit)
+rate_limiter = RateLimiter(settings.rate_limit_per_minute, window_seconds=60)
+
+
+def enforce_rate_limit(request: Request) -> None:
+    """Refuse an address that is asking too often, and say for how long."""
+    retry_after = rate_limiter.check(client_key(request, settings.trusted_proxy_hops))
+    if retry_after is None:
+        return
+    # The address is deliberately not logged: it is the one piece of personal
+    # data this app handles, and "somebody was rate limited" is the whole of
+    # what is useful here.
+    logger.info("a request was rate limited; retry after %ds", retry_after)
+    raise ApiError(
+        "rate_limited",
+        detail=f"Wait {retry_after} seconds and try again.",
+        # The standard header, so a client can back off without anybody
+        # reading the sentence above.
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def require_daily_budget() -> None:
+    """Refuse before scanning if today's allowance is already gone.
+
+    This is the first of the two places `docs/api-contract.md` puts
+    `daily_limit_reached`: the cap was already reached, so there is no point
+    starting a four-second scan whose explanations could never be written. The
+    second place is inside the explainer, for the allowance running out while
+    this request was busy.
+    """
+    if daily_budget.remaining <= 0:
+        scans = "scan" if daily_budget.limit == 1 else "scans"
+        raise ApiError(
+            "daily_limit_reached",
+            detail=f"Today's limit of {daily_budget.limit} {scans} has been "
+                   "used. It resets at midnight UTC.",
+        )
+
+
+@app.post("/verify", dependencies=[Depends(enforce_rate_limit)])
+def verify(_: None = Depends(require_access_code)) -> dict[str, bool]:
+    """Is this access code right? Nothing else.
+
+    The frontend's code screen (task 8.0) calls this once on load. It exists
+    because the alternative -- asking `/scan` and seeing whether it refuses --
+    would run a real scan and spend a real slot just to check a password.
+
+    No browser, no Claude, no budget. A wrong code is the same `unauthorized`
+    error shape as everywhere else, and the rate limiter applies so this cannot
+    be used to guess the code quickly.
+    """
+    return {"ok": True}
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """Liveness check.
@@ -187,7 +263,15 @@ class ScanRequest(BaseModel):
     )
 
 
-@app.post("/scan", response_model=Report)
+@app.post(
+    "/scan",
+    response_model=Report,
+    dependencies=[
+        Depends(enforce_rate_limit),
+        Depends(require_access_code),
+        Depends(require_daily_budget),
+    ],
+)
 async def scan(request: ScanRequest) -> Report:
     """Scan one page and return its accessibility report.
 
@@ -209,4 +293,25 @@ async def scan(request: ScanRequest) -> Report:
     """
     safe_url = await asyncio.to_thread(check_url, request.url)
     report = await scanner.scan(safe_url, settings.scan_timeout_ms)
+
+    # The slot is taken here, after the scan and before the explanation.
+    #
+    # Not before the scan, because `require_daily_budget` has already refused
+    # the easy case and a slot held across four seconds of page loading would
+    # be lost entirely if the scan then failed. Not inside the explainer,
+    # because the ceiling counts scans -- it protects the host's memory as
+    # well as the API budget, and with no API key configured there would
+    # otherwise be no ceiling on scanning at all.
+    #
+    # This is the second of the two places docs/api-contract.md puts
+    # `daily_limit_reached`: the allowance ran out while this scan was running,
+    # which is a real race rather than a theoretical one, because a scan holds
+    # things up for several seconds.
+    if not daily_budget.reserve():
+        logger.warning(
+            "the daily allowance ran out while a scan was running; "
+            "returning findings without explanations"
+        )
+        return mark_unavailable(report, UNAVAILABLE_LIMIT)
+
     return await explainer.explain(report)
