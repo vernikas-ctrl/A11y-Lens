@@ -1,11 +1,9 @@
 /**
- * Task 7.3's trivial test, and a little more.
+ * The page behind the access gate.
  *
- * The task asks for one passing test to prove the runner works. These also
- * check the two things that are cheapest to get right now and most annoying
- * to retrofit: exactly one top-level heading, and a landmark to put the
- * content in. Phase 9 audits this properly; starting correct is easier than
- * correcting later.
+ * Most of what App renders is tested in ReportView.test.tsx. What is left
+ * here is the frame around it, and the structural things that are cheapest to
+ * get right now and most annoying to retrofit in Phase 9.
  */
 
 import { render, screen } from '@testing-library/react'
@@ -16,7 +14,7 @@ describe('App', () => {
   it('renders', () => {
     render(<App />)
 
-    expect(screen.getByRole('heading', { name: 'A11y-Lens' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'A11y-Lens', level: 1 })).toBeVisible()
   })
 
   it('has exactly one level-one heading', () => {
@@ -35,13 +33,44 @@ describe('App', () => {
     expect(screen.getByRole('main')).toBeInTheDocument()
   })
 
-  it('gives its link a name that makes sense read on its own', () => {
-    // Screen readers can list every link on a page. "Click here" in such a
-    // list is useless, which is why the accessible name is what is asserted
-    // here rather than the text content.
+  it('never skips a heading level', () => {
+    // `heading-order` is one of the six faults the demo report describes. An
+    // accessibility tool committing it on the page where it describes it
+    // would be hard to defend -- and this already caught one, where the
+    // severity groups and the issue cards were both level 3.
     render(<App />)
 
-    const link = screen.getByRole('link')
-    expect(link).toHaveAccessibleName(/github\.com/)
+    const levels = screen
+      .getAllByRole('heading')
+      .map((h) => Number(h.tagName.slice(1)))
+
+    expect(levels[0]).toBe(1)
+    for (let i = 1; i < levels.length; i += 1) {
+      expect(
+        levels[i] - levels[i - 1],
+        `heading ${i} jumps from h${levels[i - 1]} to h${levels[i]}`,
+      ).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('shows the saved example report', () => {
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: /6 problems found/i })).toBeVisible()
+  })
+
+  it('says the example explanations were written by hand', () => {
+    render(<App />)
+
+    expect(screen.getByText(/written by hand/i)).toBeVisible()
+  })
+
+  it('carries the caveat about what automated tools can find', () => {
+    // The README and task 8.9 both promise this. A tool that implies a clean
+    // report means an accessible page is doing harm, and the demo page has a
+    // documented blind spot proving the point.
+    render(<App />)
+
+    expect(screen.getByText(/roughly a third/i)).toBeVisible()
   })
 })
