@@ -321,14 +321,22 @@ these are ordered to keep spend near nothing until it works.
   message, key read from `.env`. ~45 min
   **Done when:** it prints a response, and `git grep` for your key returns
   nothing.
+  *Script written: `backend/scripts/hello_claude.py`. **Waiting on a real
+  API key in `backend/.env`** -- it refuses to run on the placeholder. Its
+  error paths are verified: a deliberately wrong key prints the clear 401
+  message, not a stack trace.*
 
-- [ ] **5.2 Design the prompt on paper first** — in `docs/prompt.md`: the
+- [x] **5.2 Design the prompt on paper first** — in `docs/prompt.md`: the
   system prompt (what a good explanation contains, who's reading it, the WCAG
   criterion to cite, **and the instruction to list every assumption it made**),
   plus exactly which fields of one violation you send. Writing it down before
   coding is what makes it improvable later. ~1 hr
   **Done when:** `docs/prompt.md` holds the full system prompt text and one
   worked example of the input.
+  *`docs/prompt.md`: the full system prompt, the field-by-field list of what
+  is sent, a worked input and the answer it should produce. The prompt itself
+  lives in `backend/app/prompts/explain_system.txt`; a test fails if the
+  document and the file ever drift apart.*
 
 - [ ] **5.3 Explain one violation as structured JSON** — use structured output
   (`output_config.format` with your JSON schema, via `client.messages.parse()`)
@@ -338,6 +346,9 @@ these are ordered to keep spend near nothing until it works.
   **Done when:** one real violation returns a parsed object with explanation,
   snippet and assumptions filled in, and no hand-rolled JSON parsing anywhere
   in the path.
+  *Built: `messages.parse()` with a pydantic `output_format`, so the reply is
+  schema-valid on arrival and there is no `json.loads` of a model response
+  anywhere in the path. **Waiting on a real API key** to see one live.*
 
 - [ ] **5.4 Make the guesses honest** — for an image with no `alt`, Claude
   cannot know what the image shows, so the snippet contains an invention. The
@@ -347,44 +358,73 @@ these are ordered to keep spend near nothing until it works.
   ~1 hr
   **Done when:** a missing-`alt` violation returns a snippet plus at least one
   explicit assumption naming what it invented.
+  *Built and covered by tests against a stub: the schema carries
+  `assumptions`, and the prompt makes declaring every invention a rule rather
+  than a preference. **Waiting on a real API key** to confirm a live
+  missing-alt violation really does name what it invented.*
 
-- [ ] **5.5 Handle API failures properly** — catch specific exceptions
+- [x] **5.5 Handle API failures properly** — catch specific exceptions
   most-specific-first (not found → rate limited → other API status →
   connection error), and always check `stop_reason` before reading content.
   ~45 min
   **Done when:** a deliberately wrong API key produces your clear error, not a
   stack trace.
+  *Verified: a deliberately wrong key prints `The API key was rejected (401)`
+  and exits 1, no traceback. Eight failure types are covered by tests, each
+  asserted to be diagnosed as itself -- which is what makes the
+  most-specific-first ordering load-bearing rather than decorative.*
 
-- [ ] **5.6 Degrade gracefully when Claude is unavailable** — if explanation
+- [x] **5.6 Degrade gracefully when Claude is unavailable** — if explanation
   fails, still return the axe results with explanations marked unavailable. A
   partial report beats a failed one, and this is also what the app does once
   the daily cap is hit. ~45 min
   **Done when:** with the API key blanked out, `POST /scan` still returns
   violations and the response still matches the contract.
+  *Verified over real HTTP, twice: with the placeholder key and with a
+  deliberately wrong one. `POST /scan` returned 200 with all 9 findings from
+  example.com, `explanations_available: false`, reason `api_unavailable`, and
+  a log line naming the real cause without printing the key.*
 
 - [ ] **5.7 Explain a whole page in one pass** — one call for all issues rather
   than one per issue: far cheaper and faster. Mind the output token ceiling and
   stream if the response is long. ~1 hr
   **Done when:** a page with 10 violations gets all 10 explained, and
   `DECISIONS.md` records how many API calls one scan now costs.
+  *Built: one request per scan, grouped by rule, with the token ceiling sized
+  to the work. **Waiting on a real API key** for the ten-violation run.
+  `DECISIONS.md` records the call count: one per scan, or none at all when
+  the cache already holds the page.*
 
-- [ ] **5.8 Cache finished explanations** — the same rule violation yields the
+- [x] **5.8 Cache finished explanations** — the same rule violation yields the
   same explanation, so store it keyed by rule id and don't pay twice. On a zero
   budget this is load-bearing, not an optimisation. In-process dictionary is
   fine; note that it empties on restart. ~1 hr
   **Done when:** scanning the same URL twice makes no second API call, proven
   by a log line or counter.
+  *Proven by counter, not by reading logs: `explainer.cache.counters.api_calls`
+  stays at 1 across two scans of the same page. Two caches, because the prose
+  describes a rule and the snippet describes an element -- see
+  `docs/prompt.md` section 6 and `DECISIONS.md`. Identical elements inside one
+  page are also deduplicated, which a test caught me not doing.*
 
 - [ ] **5.9 Add prompt caching** — your system prompt is identical on every
   request, so mark it cached and it bills at a fraction of the rate. Order
   matters: stable content first, the per-scan violations last. ~1 hr
   **Done when:** `usage.cache_read_input_tokens` is above zero on the second
   scan. If it's zero, something in your prefix is changing between requests.
+  *Built: the system prompt is a single cached block, first in the request,
+  with the per-scan JSON last. A test asserts that shape, and the prompt is
+  comfortably over the 512-token floor this model needs. **Waiting on a real
+  API key** to see `cache_read_input_tokens` above zero.*
 
-- [ ] **5.10 Tests with the API mocked out** — tests must never call the real
+- [x] **5.10 Tests with the API mocked out** — tests must never call the real
   API: slow, flaky, and they'd spend money on every run and every CI build.
   Replace the client with a stub returning a canned response. ~1 hr
   **Done when:** `pytest` passes with no network and no API key set.
+  *74 new tests, none of which touch the API: the client is built through a
+  factory the tests replace. Verified with `ANTHROPIC_BASE_URL` pointed at a
+  dead port and an invalid key -- 230 tests still pass, so nothing in the
+  suite can quietly start spending money.*
 
 - [ ] **5.11 Measure the cost per scan** — count tokens with the API's own
   `count_tokens` (never a third-party tokenizer — it gives wrong numbers for
@@ -393,7 +433,9 @@ these are ordered to keep spend near nothing until it works.
   100 scans would cost.
 
 ---
-
+  *Script written: `backend/scripts/cost_check.py`, which counts tokens with
+  the API's own `count_tokens` and prices a scan from `usage`. **Waiting on a
+  real API key.** The estimate to beat: about $0.036 a cold scan on Opus 5.5.*
 ## Phase 6 — The gate and the ceiling
 
 **Both must be finished before the app is ever reachable from the internet.**
