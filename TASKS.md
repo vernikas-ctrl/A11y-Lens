@@ -446,6 +446,9 @@ these are ordered to keep spend near nothing until it works.
   the one thing standing between a forwarded link and an empty account. ~1 hr
   **Done when:** with the cap set to 1, the second scan of the day returns a
   clear "daily limit reached" result and makes no API call.
+  *Link-only sharing means a small cap is enough: set `DAILY_SCAN_LIMIT` nearer
+  15 than 50. A smaller ceiling is a smaller worst case if the link is
+  forwarded.*
 
 - [ ] **6.2 Access code for live scanning** — one shared secret, from `.env`,
   checked by the backend on `/scan`. Prefer a code entered once and remembered
@@ -488,23 +491,37 @@ these are ordered to keep spend near nothing until it works.
 
 ## Phase 8 — Frontend UI
 
-- [ ] **8.1 The public demo page** — a real saved report from a real scan,
+*There is no 8.3: the access code screen was 8.3 and became 8.0 on
+2026-11-03, when the app stopped being public. The other numbers are
+unchanged, because they are referenced from DECISIONS.md and from commit
+messages.*
+
+- [ ] **8.0 The access code screen, as the shell** — the app is link-only, so
+  this is the front door and not a step in the middle: with no valid code,
+  nothing else renders at all. Asked for once, remembered in the browser, with
+  a clear message when it's wrong. Validated by the backend, never compared in
+  the frontend. **Build this before anything else in Phase 8.** ~1 hr
+  **Done when:** a fresh browser sees only the code prompt; a correct code
+  reveals the app and survives a reload; a wrong one explains itself.
+  *It is also the first thing Phase 9 audits: labelled input, visible focus,
+  the error announced to a screen reader rather than only coloured red.*
+
+- [ ] **8.1 The saved demo report** — a real saved report from a real scan,
   stored as a JSON file in the frontend and rendered instantly with **no
-  backend call**. Build it first: it's the one thing every portfolio reviewer
-  will see, it works while the free-tier backend is asleep, and it gives every
+  backend call**. It sits *inside* the access-code shell from 8.0: not public,
+  but the first thing anyone you give the code to sees. Worth building early
+  because it works while the free-tier backend is asleep, and it gives every
   later task something to render. ~1 hr
-  **Done when:** the demo page renders a full report with the backend
-  completely switched off.
+  **Done when:** the demo report renders in full with the backend completely
+  switched off.
+  *See DECISIONS.md, 2026-11-03: a file in the frontend bundle has an ordinary
+  public URL, so this report is obscured rather than gated. Decide then whether
+  to serve it from behind the code check instead.*
 
 - [ ] **8.2 The URL input form** — labelled input, submit button, client-side
   validation, disabled while submitting. ~1 hr
   **Done when:** submitting a URL calls the backend and the result appears;
   submitting empty shows an inline message without calling it.
-
-- [ ] **8.3 The access code screen** — asked for once, remembered in the
-  browser, with a clear message when it's wrong. ~45 min
-  **Done when:** a correct code unlocks scanning and survives a page reload; a
-  wrong one explains itself.
 
 - [ ] **8.4 The loading state** — a scan takes several seconds and a cold
   backend takes longer, so silence reads as breakage. Show continuous progress
@@ -622,6 +639,14 @@ through your app specifically to check.
   match the backend's and say something honest while waiting. ~45 min
   **Done when:** a scan after an hour of inactivity either succeeds or shows a
   "waking up, try again" message — never a silent failure.
+
+- [ ] **10.7 Keep it out of search engines and listings** — a `noindex`
+  response header and a `robots.txt` that disallows everything. The app is
+  link-only, and Vercel hands every deployment a guessable `*.vercel.app`
+  name, so unlisted is not the same as unfindable. ~30 min
+  **Done when:** `curl -I` on the deployed frontend shows
+  `x-robots-tag: noindex`, `robots.txt` disallows `/`, and a search for the
+  project name returns nothing.
 
 - [ ] **10.6 Verify the ceiling in production** — confirm the daily cap and
   access code actually work on the deployed app, not just locally. Config
