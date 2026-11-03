@@ -6,3 +6,7 @@ fastapi==0.162.0
 pydantic-settings==2.16.2
 uvicorn[standard]==0.54.0
 playwright==1.64.1
+
+# Phase 5: the Claude API client. Explanations are the part of the product
+# people actually read, so this is not optional for the running app.
+anthropic==2.4.0

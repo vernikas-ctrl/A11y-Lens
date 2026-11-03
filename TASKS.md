@@ -317,18 +317,49 @@ Anthropic Python SDK (`anthropic`), model `claude-opus-5-5`. **The API key
 lives only in `.env`.** Every call costs real money against a zero budget, so
 these are ordered to keep spend near nothing until it works.
 
+> **BLOCKED ON BUDGET, 2026-11-03.** There is no free Claude API tier: a key
+> needs credit on the account, and there is none. Six of these eleven tasks
+> (5.1, 5.3, 5.4, 5.7, 5.9, 5.11) need one live call to verify and are
+> therefore **blocked, not outstanding** — the code for all of them is written
+> and covered by 74 tests against a stub.
+>
+> **What this means for the app:** it works. A scan returns real findings; the
+> explanations come back marked unavailable, which is the contract's documented
+> degraded mode and not a fault. Every remaining phase (6 through 11) needs no
+> API key at all.
+>
+> **What it would take to close:** about 10 cents, or nothing if the Console
+> shows a signup credit. `scripts/hello_claude.py` is one call and costs about
+> a tenth of a cent — enough to prove the key, the model id and the effort
+> setting are all accepted. The full `scripts/cost_check.py` run closes the
+> other five and costs roughly 8 cents on Opus, under a cent on
+> `claude-haiku-5-5`.
+>
+> **Honest caveat:** this code has never spoken to the live API. The schema
+> generation, the request shape and every failure path are verified locally,
+> but "verified locally" is not "verified". Treat Phase 5 as written and
+> unit-tested, not as proven.
+
 - [ ] **5.1 One hello-world API call** — a throwaway script sending one short
   message, key read from `.env`. ~45 min
   **Done when:** it prints a response, and `git grep` for your key returns
   nothing.
+  *Script written: `backend/scripts/hello_claude.py`. **Waiting on a real
+  API key in `backend/.env`** -- it refuses to run on the placeholder. Its
+  error paths are verified: a deliberately wrong key prints the clear 401
+  message, not a stack trace.*
 
-- [ ] **5.2 Design the prompt on paper first** — in `docs/prompt.md`: the
+- [x] **5.2 Design the prompt on paper first** — in `docs/prompt.md`: the
   system prompt (what a good explanation contains, who's reading it, the WCAG
   criterion to cite, **and the instruction to list every assumption it made**),
   plus exactly which fields of one violation you send. Writing it down before
   coding is what makes it improvable later. ~1 hr
   **Done when:** `docs/prompt.md` holds the full system prompt text and one
   worked example of the input.
+  *`docs/prompt.md`: the full system prompt, the field-by-field list of what
+  is sent, a worked input and the answer it should produce. The prompt itself
+  lives in `backend/app/prompts/explain_system.txt`; a test fails if the
+  document and the file ever drift apart.*
 
 - [ ] **5.3 Explain one violation as structured JSON** — use structured output
   (`output_config.format` with your JSON schema, via `client.messages.parse()`)
@@ -338,6 +369,9 @@ these are ordered to keep spend near nothing until it works.
   **Done when:** one real violation returns a parsed object with explanation,
   snippet and assumptions filled in, and no hand-rolled JSON parsing anywhere
   in the path.
+  *Built: `messages.parse()` with a pydantic `output_format`, so the reply is
+  schema-valid on arrival and there is no `json.loads` of a model response
+  anywhere in the path. **Waiting on a real API key** to see one live.*
 
 - [ ] **5.4 Make the guesses honest** — for an image with no `alt`, Claude
   cannot know what the image shows, so the snippet contains an invention. The
@@ -347,44 +381,73 @@ these are ordered to keep spend near nothing until it works.
   ~1 hr
   **Done when:** a missing-`alt` violation returns a snippet plus at least one
   explicit assumption naming what it invented.
+  *Built and covered by tests against a stub: the schema carries
+  `assumptions`, and the prompt makes declaring every invention a rule rather
+  than a preference. **Waiting on a real API key** to confirm a live
+  missing-alt violation really does name what it invented.*
 
-- [ ] **5.5 Handle API failures properly** — catch specific exceptions
+- [x] **5.5 Handle API failures properly** — catch specific exceptions
   most-specific-first (not found → rate limited → other API status →
   connection error), and always check `stop_reason` before reading content.
   ~45 min
   **Done when:** a deliberately wrong API key produces your clear error, not a
   stack trace.
+  *Verified: a deliberately wrong key prints `The API key was rejected (401)`
+  and exits 1, no traceback. Eight failure types are covered by tests, each
+  asserted to be diagnosed as itself -- which is what makes the
+  most-specific-first ordering load-bearing rather than decorative.*
 
-- [ ] **5.6 Degrade gracefully when Claude is unavailable** — if explanation
+- [x] **5.6 Degrade gracefully when Claude is unavailable** — if explanation
   fails, still return the axe results with explanations marked unavailable. A
   partial report beats a failed one, and this is also what the app does once
   the daily cap is hit. ~45 min
   **Done when:** with the API key blanked out, `POST /scan` still returns
   violations and the response still matches the contract.
+  *Verified over real HTTP, twice: with the placeholder key and with a
+  deliberately wrong one. `POST /scan` returned 200 with all 9 findings from
+  example.com, `explanations_available: false`, reason `api_unavailable`, and
+  a log line naming the real cause without printing the key.*
 
 - [ ] **5.7 Explain a whole page in one pass** — one call for all issues rather
   than one per issue: far cheaper and faster. Mind the output token ceiling and
   stream if the response is long. ~1 hr
   **Done when:** a page with 10 violations gets all 10 explained, and
   `DECISIONS.md` records how many API calls one scan now costs.
+  *Built: one request per scan, grouped by rule, with the token ceiling sized
+  to the work. **Waiting on a real API key** for the ten-violation run.
+  `DECISIONS.md` records the call count: one per scan, or none at all when
+  the cache already holds the page.*
 
-- [ ] **5.8 Cache finished explanations** — the same rule violation yields the
+- [x] **5.8 Cache finished explanations** — the same rule violation yields the
   same explanation, so store it keyed by rule id and don't pay twice. On a zero
   budget this is load-bearing, not an optimisation. In-process dictionary is
   fine; note that it empties on restart. ~1 hr
   **Done when:** scanning the same URL twice makes no second API call, proven
   by a log line or counter.
+  *Proven by counter, not by reading logs: `explainer.cache.counters.api_calls`
+  stays at 1 across two scans of the same page. Two caches, because the prose
+  describes a rule and the snippet describes an element -- see
+  `docs/prompt.md` section 6 and `DECISIONS.md`. Identical elements inside one
+  page are also deduplicated, which a test caught me not doing.*
 
 - [ ] **5.9 Add prompt caching** — your system prompt is identical on every
   request, so mark it cached and it bills at a fraction of the rate. Order
   matters: stable content first, the per-scan violations last. ~1 hr
   **Done when:** `usage.cache_read_input_tokens` is above zero on the second
   scan. If it's zero, something in your prefix is changing between requests.
+  *Built: the system prompt is a single cached block, first in the request,
+  with the per-scan JSON last. A test asserts that shape, and the prompt is
+  comfortably over the 512-token floor this model needs. **Waiting on a real
+  API key** to see `cache_read_input_tokens` above zero.*
 
-- [ ] **5.10 Tests with the API mocked out** — tests must never call the real
+- [x] **5.10 Tests with the API mocked out** — tests must never call the real
   API: slow, flaky, and they'd spend money on every run and every CI build.
   Replace the client with a stub returning a canned response. ~1 hr
   **Done when:** `pytest` passes with no network and no API key set.
+  *74 new tests, none of which touch the API: the client is built through a
+  factory the tests replace. Verified with `ANTHROPIC_BASE_URL` pointed at a
+  dead port and an invalid key -- 230 tests still pass, so nothing in the
+  suite can quietly start spending money.*
 
 - [ ] **5.11 Measure the cost per scan** — count tokens with the API's own
   `count_tokens` (never a third-party tokenizer — it gives wrong numbers for
@@ -393,7 +456,9 @@ these are ordered to keep spend near nothing until it works.
   100 scans would cost.
 
 ---
-
+  *Script written: `backend/scripts/cost_check.py`, which counts tokens with
+  the API's own `count_tokens` and prices a scan from `usage`. **Waiting on a
+  real API key.** The estimate to beat: about $0.036 a cold scan on Opus 5.5.*
 ## Phase 6 — The gate and the ceiling
 
 **Both must be finished before the app is ever reachable from the internet.**
@@ -404,6 +469,9 @@ these are ordered to keep spend near nothing until it works.
   the one thing standing between a forwarded link and an empty account. ~1 hr
   **Done when:** with the cap set to 1, the second scan of the day returns a
   clear "daily limit reached" result and makes no API call.
+  *Link-only sharing means a small cap is enough: set `DAILY_SCAN_LIMIT` nearer
+  15 than 50. A smaller ceiling is a smaller worst case if the link is
+  forwarded.*
 
 - [ ] **6.2 Access code for live scanning** — one shared secret, from `.env`,
   checked by the backend on `/scan`. Prefer a code entered once and remembered
@@ -446,23 +514,37 @@ these are ordered to keep spend near nothing until it works.
 
 ## Phase 8 — Frontend UI
 
-- [ ] **8.1 The public demo page** — a real saved report from a real scan,
+*There is no 8.3: the access code screen was 8.3 and became 8.0 on
+2026-11-03, when the app stopped being public. The other numbers are
+unchanged, because they are referenced from DECISIONS.md and from commit
+messages.*
+
+- [ ] **8.0 The access code screen, as the shell** — the app is link-only, so
+  this is the front door and not a step in the middle: with no valid code,
+  nothing else renders at all. Asked for once, remembered in the browser, with
+  a clear message when it's wrong. Validated by the backend, never compared in
+  the frontend. **Build this before anything else in Phase 8.** ~1 hr
+  **Done when:** a fresh browser sees only the code prompt; a correct code
+  reveals the app and survives a reload; a wrong one explains itself.
+  *It is also the first thing Phase 9 audits: labelled input, visible focus,
+  the error announced to a screen reader rather than only coloured red.*
+
+- [ ] **8.1 The saved demo report** — a real saved report from a real scan,
   stored as a JSON file in the frontend and rendered instantly with **no
-  backend call**. Build it first: it's the one thing every portfolio reviewer
-  will see, it works while the free-tier backend is asleep, and it gives every
+  backend call**. It sits *inside* the access-code shell from 8.0: not public,
+  but the first thing anyone you give the code to sees. Worth building early
+  because it works while the free-tier backend is asleep, and it gives every
   later task something to render. ~1 hr
-  **Done when:** the demo page renders a full report with the backend
-  completely switched off.
+  **Done when:** the demo report renders in full with the backend completely
+  switched off.
+  *See DECISIONS.md, 2026-11-03: a file in the frontend bundle has an ordinary
+  public URL, so this report is obscured rather than gated. Decide then whether
+  to serve it from behind the code check instead.*
 
 - [ ] **8.2 The URL input form** — labelled input, submit button, client-side
   validation, disabled while submitting. ~1 hr
   **Done when:** submitting a URL calls the backend and the result appears;
   submitting empty shows an inline message without calling it.
-
-- [ ] **8.3 The access code screen** — asked for once, remembered in the
-  browser, with a clear message when it's wrong. ~45 min
-  **Done when:** a correct code unlocks scanning and survives a page reload; a
-  wrong one explains itself.
 
 - [ ] **8.4 The loading state** — a scan takes several seconds and a cold
   backend takes longer, so silence reads as breakage. Show continuous progress
@@ -580,6 +662,14 @@ through your app specifically to check.
   match the backend's and say something honest while waiting. ~45 min
   **Done when:** a scan after an hour of inactivity either succeeds or shows a
   "waking up, try again" message — never a silent failure.
+
+- [ ] **10.7 Keep it out of search engines and listings** — a `noindex`
+  response header and a `robots.txt` that disallows everything. The app is
+  link-only, and Vercel hands every deployment a guessable `*.vercel.app`
+  name, so unlisted is not the same as unfindable. ~30 min
+  **Done when:** `curl -I` on the deployed frontend shows
+  `x-robots-tag: noindex`, `robots.txt` disallows `/`, and a search for the
+  project name returns nothing.
 
 - [ ] **10.6 Verify the ceiling in production** — confirm the daily cap and
   access code actually work on the deployed app, not just locally. Config

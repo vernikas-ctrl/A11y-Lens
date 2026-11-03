@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.config import ConfigError, get_settings
 from app.errors import register_error_handlers, register_request_logging
+from app.explainer import Explainer
 from app.scanner import Report, Scanner
 from app.url_safety import MAX_URL_LENGTH, check_url
 
@@ -68,6 +69,24 @@ logging.basicConfig(
 # that only needs paying once.
 scanner = Scanner()
 
+# --- Task 5.6: the explanation client ---------------------------------------
+#
+# Same lifetime as the browser and for a smaller version of the same reason:
+# one client, pooling its connections, rather than one per request. It also
+# holds the explanation cache, which is only worth anything if it survives
+# between requests.
+#
+# `enabled` is what makes a fresh clone work with no API key at all: the
+# explainer then makes no calls and every scan returns the contract's degraded
+# success instead of failing.
+explainer = Explainer(
+    api_key=settings.anthropic_api_key.get_secret_value(),
+    model=settings.anthropic_model,
+    effort=settings.anthropic_effort,
+    timeout_ms=settings.explain_timeout_ms,
+    enabled=not settings.uses_placeholder_api_key,
+)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -79,10 +98,15 @@ async def lifespan(_: FastAPI):
     """
     await scanner.start()
     try:
-        yield
+        await explainer.start()
+        try:
+            yield
+        finally:
+            await explainer.stop()
     finally:
         # In a finally, so a crash during shutdown still does not leave a
-        # Chromium process behind.
+        # Chromium process behind. Nested rather than side by side so that a
+        # failure stopping one still stops the other.
         await scanner.stop()
 
 
@@ -174,9 +198,15 @@ async def scan(request: ScanRequest) -> Report:
     check_url resolves DNS, which blocks, so it runs in a worker thread rather
     than on the event loop that is also driving the browser.
 
+    The explanation step comes second and cannot fail the request: by the time
+    it runs there is already a complete, valid report, and `explain` returns
+    that report marked as degraded rather than raising. A scan that found ten
+    real problems is worth having even when Claude is down.
+
     No access code yet -- task 6.2 adds that, and task 6.1 adds the daily
     ceiling. This endpoint must not be reachable from the internet until both
     exist, which is why Phase 6 says so in capital letters.
     """
     safe_url = await asyncio.to_thread(check_url, request.url)
-    return await scanner.scan(safe_url, settings.scan_timeout_ms)
+    report = await scanner.scan(safe_url, settings.scan_timeout_ms)
+    return await explainer.explain(report)
