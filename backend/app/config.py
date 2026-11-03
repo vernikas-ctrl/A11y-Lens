@@ -105,6 +105,27 @@ class Settings(BaseSettings):
                     "gives up on it and returns findings without explanations.",
     )
 
+    # --- Phase 6: the gate and the ceiling. ---------------------------------
+
+    rate_limit_per_minute: int = Field(
+        default=5,
+        ge=1,
+        le=600,
+        description="Requests one address may make per minute. A third line of "
+                    "defence behind the access code and the daily ceiling, so "
+                    "it is deliberately modest rather than clever.",
+    )
+    trusted_proxy_hops: int = Field(
+        default=0,
+        ge=0,
+        le=4,
+        description="How many proxies sit in front of this app. 0 locally, "
+                    "where the connection address is the truth. Behind one "
+                    "host proxy it is 1. Getting this wrong breaks rate "
+                    "limiting in one direction or the other -- see "
+                    "app/limits.py:client_key.",
+    )
+
     @field_validator("anthropic_effort")
     @classmethod
     def check_effort(cls, value: str) -> str:
