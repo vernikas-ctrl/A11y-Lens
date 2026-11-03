@@ -317,6 +317,29 @@ Anthropic Python SDK (`anthropic`), model `claude-opus-5-5`. **The API key
 lives only in `.env`.** Every call costs real money against a zero budget, so
 these are ordered to keep spend near nothing until it works.
 
+> **BLOCKED ON BUDGET, 2026-11-03.** There is no free Claude API tier: a key
+> needs credit on the account, and there is none. Six of these eleven tasks
+> (5.1, 5.3, 5.4, 5.7, 5.9, 5.11) need one live call to verify and are
+> therefore **blocked, not outstanding** — the code for all of them is written
+> and covered by 74 tests against a stub.
+>
+> **What this means for the app:** it works. A scan returns real findings; the
+> explanations come back marked unavailable, which is the contract's documented
+> degraded mode and not a fault. Every remaining phase (6 through 11) needs no
+> API key at all.
+>
+> **What it would take to close:** about 10 cents, or nothing if the Console
+> shows a signup credit. `scripts/hello_claude.py` is one call and costs about
+> a tenth of a cent — enough to prove the key, the model id and the effort
+> setting are all accepted. The full `scripts/cost_check.py` run closes the
+> other five and costs roughly 8 cents on Opus, under a cent on
+> `claude-haiku-5-5`.
+>
+> **Honest caveat:** this code has never spoken to the live API. The schema
+> generation, the request shape and every failure path are verified locally,
+> but "verified locally" is not "verified". Treat Phase 5 as written and
+> unit-tested, not as proven.
+
 - [ ] **5.1 One hello-world API call** — a throwaway script sending one short
   message, key read from `.env`. ~45 min
   **Done when:** it prints a response, and `git grep` for your key returns
