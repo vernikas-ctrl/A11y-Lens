@@ -75,13 +75,13 @@ export default function ScanForm({ onScan, busy }: Props) {
           disabled={busy}
           aria-describedby={problem ? problemId : undefined}
           aria-invalid={problem !== null}
-          className="flex-1 rounded-md border border-muted bg-paper px-3 py-2 text-ink disabled:opacity-60"
+          className="flex-1 rounded-md border border-muted bg-paper px-3 py-2 text-ink disabled:bg-surface disabled:text-muted disabled:cursor-not-allowed"
         />
 
         <button
           type="submit"
           disabled={busy}
-          className="rounded-md bg-primary px-4 py-2 font-medium text-paper disabled:opacity-60"
+          className="rounded-md bg-primary px-4 py-2 font-medium text-paper disabled:bg-muted disabled:cursor-not-allowed"
         >
           {busy ? 'Scanning…' : 'Scan'}
         </button>

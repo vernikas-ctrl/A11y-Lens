@@ -351,7 +351,7 @@ export default function AccessGate({ children }: Props) {
           aria-describedby={problem ? 'access-code-problem' : undefined}
           aria-invalid={problem !== null && !offline}
           disabled={submitting}
-          className="rounded-md border border-muted bg-paper px-3 py-2 text-ink disabled:opacity-60"
+          className="rounded-md border border-muted bg-paper px-3 py-2 text-ink disabled:bg-surface disabled:text-muted disabled:cursor-not-allowed"
         />
 
         {/* Always in the document, even when empty. A live region added to
@@ -369,7 +369,7 @@ export default function AccessGate({ children }: Props) {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-primary px-4 py-2 font-medium text-paper disabled:opacity-60"
+          className="rounded-md bg-primary px-4 py-2 font-medium text-paper disabled:bg-muted disabled:cursor-not-allowed"
         >
           {submitting ? 'Checking…' : offline ? 'Try again' : 'Continue'}
         </button>
