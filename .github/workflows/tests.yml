@@ -1,0 +1,119 @@
+# Both test suites, on every pull request. Task 11.1.
+#
+# Why this exists: every "Done when" in TASKS.md is a promise that something
+# was seen to work. On a laptop that depends on remembering to run two
+# commands in two directories. Here it is not optional, and a pull request
+# that breaks either half says so before anybody reads the diff.
+#
+# Two jobs rather than one, because they fail for unrelated reasons and a
+# combined job would hide which half broke behind a single red cross.
+
+name: Tests
+
+on:
+  pull_request:
+  push:
+    # After a merge as well: a pull request is tested against its own head,
+    # and two pull requests that each pass can still break main together.
+    branches: [main]
+
+# A second push to the same branch makes the first run pointless. Without
+# this they queue up and the useful answer arrives last.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only. These jobs run tests; nothing here needs to write to the
+# repository, and a token that cannot write cannot be talked into writing.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          # Pinned to the version every one of these tests has actually been
+          # run against, and the one backend/Dockerfile deploys. "3.x" would
+          # silently move the floor under the suite one morning.
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Chromium is ~150MB and the slowest step by a wide margin. The key is
+      # the pinned playwright version, because that is what decides which
+      # browser build is wanted -- requirements.txt changing for an unrelated
+      # reason would needlessly throw the cache away.
+      - name: Cache the Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('backend/requirements.txt') }}
+
+      # The browser is cached; the system libraries it links against are not,
+      # because they are installed into the runner image rather than a
+      # directory. So the deps step runs either way and only the download is
+      # skipped.
+      - name: Install Chromium and its system libraries
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: playwright install --with-deps chromium
+
+      - name: Install Chromium's system libraries (browser came from cache)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: playwright install-deps chromium
+
+      # Worth knowing what this covers: the suite launches a real Chromium,
+      # but against tests/fixtures/broken.html on disk rather than a live
+      # site, so it does not depend on anybody else's uptime. The exception
+      # is DNS -- the endpoint tests post example.com and url_safety resolves
+      # it for real. That is deliberate and it is the one outside thing this
+      # job needs.
+      - name: Run the tests
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend (vitest, build, lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `ci`, not `install`: it installs exactly what the lockfile says and
+      # fails if package.json and the lockfile disagree, rather than quietly
+      # resolving something nobody has tested.
+      - name: Install dependencies
+        run: npm ci
+
+      # src/a11y.test.tsx imports axe-core out of backend/app/vendor/ rather
+      # than a second copy from npm, so this job needs the whole repository
+      # checked out -- which it has, and this comment is here so that nobody
+      # "optimises" it to a sparse checkout of frontend/.
+      - name: Run the tests
+        run: npm test
+
+      - name: Type-check and build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint

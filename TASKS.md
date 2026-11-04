@@ -947,6 +947,14 @@ through your app specifically to check.
   running `pytest` and `npm test`. ~1 hr
   **Done when:** a PR shows both suites passing as checks, and a deliberately
   broken test blocks the PR.
+  *`.github/workflows/tests.yml` written: two jobs, because the halves fail
+  for unrelated reasons and one combined job would hide which broke. Python
+  pinned to 3.14 and Node to 24 — the versions these tests have actually been
+  run against. Chromium is cached on the pinned Playwright version, with the
+  system libraries installed either way, since they go into the runner image
+  rather than a cached directory.*
+  *Unticked until a real pull request shows it. Both halves of the "Done
+  when" need a run that exists on GitHub, not on this laptop.*
 
 - [ ] **11.2 Finish the README** — what it does, a screenshot, the demo link,
   local setup for both halves, environment variables, how to deploy, and the
