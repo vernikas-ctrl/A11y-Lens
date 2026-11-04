@@ -71,6 +71,35 @@ const WORTH_RETRYING: ReadonlySet<ClientErrorCode> = new Set<ClientErrorCode>([
   'request_timeout',
 ])
 
+/**
+ * Task 10.5. The one failure a cold host is most likely to produce, and the
+ * one case above that was getting the wrong treatment.
+ *
+ * `client.ts` turns a response it cannot parse into `malformed_response`, and
+ * its own comment says why: "a proxy or a sleeping host can answer with an
+ * HTML error page". A free host waking up does exactly that -- Cloud Run
+ * answers a request that arrives before the container is serving with its own
+ * 5xx page, which is HTML and not the contract's shape.
+ *
+ * So the single most likely cold-start failure was landing on the one code
+ * that offers no "try again" button and says "Worth reporting." Retrying is
+ * precisely what fixes it, and reporting it achieves nothing.
+ *
+ * Split by status rather than by code: a 5xx is the host, while a 2xx or 4xx
+ * that is not the contract's shape really is a bug in this app.
+ */
+function hostIsStillStarting(failure: ApiFailure): boolean {
+  return (
+    failure.code === 'malformed_response' &&
+    failure.status !== null &&
+    failure.status >= 500
+  )
+}
+
+/** The cold-start wording, which replaces the bug-report wording above. */
+const HOST_STARTING_ADVICE =
+  'Nothing is broken and nothing needs reporting. The server sleeps when nobody is using it, and the first request wakes it; give it half a minute and try again.'
+
 interface Props {
   failure: ApiFailure
   /** Offered only where retrying could help; absent otherwise. */
@@ -78,8 +107,10 @@ interface Props {
 }
 
 export default function ErrorNotice({ failure, onRetry }: Props) {
-  const advice = WHAT_TO_DO[failure.code]
-  const canRetry = onRetry !== undefined && WORTH_RETRYING.has(failure.code)
+  const starting = hostIsStillStarting(failure)
+  const advice = starting ? HOST_STARTING_ADVICE : WHAT_TO_DO[failure.code]
+  const canRetry =
+    onRetry !== undefined && (starting || WORTH_RETRYING.has(failure.code))
 
   return (
     // role="alert" because this replaces what the person was waiting for.

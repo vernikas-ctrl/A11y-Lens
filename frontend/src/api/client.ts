@@ -50,13 +50,34 @@ export type ApiResult<T> =
   | { ok: false; error: ApiFailure }
 
 /** What we say when the backend did not get a chance to say anything. */
-const TRANSPORT_MESSAGES: Record<'network_error' | 'request_timeout' | 'malformed_response', string> = {
+const TRANSPORT_MESSAGES: Record<
+  'network_error' | 'request_timeout' | 'malformed_response' | 'host_not_ready',
+  string
+> = {
   network_error:
     'Could not reach A11y-Lens. Check your connection, or the backend may be starting up.',
   request_timeout:
     'A11y-Lens took too long to answer. The page may be very slow, or the backend may be waking up.',
   malformed_response:
     'A11y-Lens sent back something unexpected. This is a bug, not something you did wrong.',
+  host_not_ready:
+    'A11y-Lens is not answering yet: something in front of it replied instead. That is what a server still starting up looks like.',
+}
+
+/**
+ * Task 10.5. Both messages above belong to the same `malformed_response`
+ * code, and the status says which of them is true.
+ *
+ * The code stays one code on purpose -- contract rule 1 is that callers branch
+ * on `code`, and a new code would mean a new case in every exhaustive switch
+ * over it. What changes is only the sentence, because the two situations are
+ * not alike: a 2xx or 4xx that is not the contract's shape is a bug in this
+ * app and somebody should hear about it, while a 5xx HTML page from a free
+ * host that is still launching Chromium is a wait, and the thing to do about
+ * it is wait.
+ */
+function malformedMessage(status: number): string {
+  return status >= 500 ? TRANSPORT_MESSAGES.host_not_ready : TRANSPORT_MESSAGES.malformed_response
 }
 
 export interface RequestOptions {
@@ -160,7 +181,7 @@ async function request<T>(
     // rather than crashing on `.json()`.
     return failure(
       'malformed_response',
-      TRANSPORT_MESSAGES.malformed_response,
+      malformedMessage(response.status),
       `The response to ${path} was not JSON.`,
       response.status,
     )
@@ -181,7 +202,7 @@ async function request<T>(
     // backend answered instead of the backend.
     return failure(
       'malformed_response',
-      TRANSPORT_MESSAGES.malformed_response,
+      malformedMessage(response.status),
       `${path} returned ${response.status} without an error code.`,
       response.status,
     )

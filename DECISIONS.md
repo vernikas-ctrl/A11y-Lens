@@ -1246,3 +1246,170 @@ Worth recording how it was measured: this browser would not resize its window,
 so the layout was tested in an iframe at the target width. An iframe's
 viewport drives media queries exactly as a narrow window does, which makes it
 a real test rather than a simulation.
+
+---
+
+## 2026-11-04 — The backend goes on Google Cloud Run, and the daily cap pays for it
+
+**Decided:** The backend deploys to **Google Cloud Run**, configured with
+**2 GiB of memory and 1 vCPU**, request-based billing, scaling to zero when
+idle. Render, Fly.io and Hugging Face Spaces were all considered and rejected.
+
+**What it costs.** Nothing, and the daily cap from Phase 6 is what makes that
+a fact rather than a hope. Cloud Run's free allowance is 180,000 vCPU-seconds,
+360,000 GiB-seconds and 2 million requests per month. `DAILY_SCAN_LIMIT` is 15
+and `SCAN_TIMEOUT_MS` is 30 seconds, so the most this service can physically
+consume in a 31-day month is:
+
+| | Worst case | Free allowance | Used |
+|---|---|---|---|
+| Memory | 465 scans x 2 GiB x 30s = 27,900 GiB-s | 360,000 | **7.8%** |
+| CPU | 465 scans x 1 vCPU x 30s = 13,950 vCPU-s | 180,000 | **7.8%** |
+| Requests | a few thousand | 2,000,000 | negligible |
+
+The ceiling built in Phase 6 to stop the Anthropic bill running away turns out
+to bound the hosting bill too, and by a factor of twelve. Leaving the free
+tier would require raising `DAILY_SCAN_LIMIT` past roughly 190 a day.
+
+**If the allowance did run out,** the rate beyond it is about $0.000024 per
+vCPU-second and $0.0000025 per GiB-second in a Tier 1 region, which works out
+at **under a tenth of a penny per scan** (about $0.0009 for a full 30-second
+scan at this configuration). These rates were cross-checked across several
+sources; Google's own pricing page could not be fetched directly, so re-check
+them before relying on the figure.
+
+**Why not the others.**
+
+- **Render** — 512MB on both the free and the $7 Starter plan, so paying does
+  not buy memory. The 2GB Standard instance is $25/month, which is a lot for
+  a demo that is idle almost all the time and has no usage-based floor.
+- **Hugging Face Spaces** — 16GB free was the most attractive option on paper
+  and it is now gone: as of 2026, creating a Docker or Gradio Space requires a
+  paid plan. Free personal accounts get static Spaces only. This is exactly
+  the kind of change Phase 1.2 warned would happen, which is why that note
+  said to re-verify.
+- **Fly.io** — genuinely good and the least work (`fly deploy` on a Dockerfile,
+  5-15s cold starts), but there is no free tier for new accounts and a 2GB
+  machine is $12.70/month always-on, or $1-3 with auto-stop. Real money for
+  something Cloud Run does for nothing.
+
+**The cost of Cloud Run, honestly stated:** it is the most setup of the three
+(a Dockerfile, a `gcloud` toolchain and a billing account), it needs a card on
+file even though nothing should ever charge it, and its cold start is the
+slowest at 20-40 seconds. That last one is survivable only because task 8.10
+built the waking screen — on a host with no cold start it would be decoration,
+and here it is load-bearing. Set a $0 budget alert at setup so an unexpected
+charge is noticed rather than discovered.
+
+**First, the path not taken.** The original choice was to shrink a scan to fit
+512MB instead of choosing a bigger host. That is now measured and closed.
+Phase 1.2 had shown content blocking saving 80MB of 859; the two levers it had
+*not* tested were the `chromium-headless-shell` build and flags that change how
+Chromium splits into processes. Both are now switches on `memory_check.py`.
+Measured 4 Nov 2026, re-baselined the same day because the Guardian front page
+had grown to 636MB from 536MB:
+
+| Page | baseline | `--shell` | `--flags` | all three |
+|---|---|---|---|---|
+| Wikipedia, "World War II" | 840.6 MB | 894.9 | 847.8 | 861.0 |
+| Guardian front page | 636.4 MB | 636.8 | 641.4 | 613.6 |
+| `example.com` | 406.6 MB | - | - | 405.1 |
+
+Every lever is inside the run-to-run noise band and two measured worse. The
+process count stayed at 5 throughout, so `--renderer-process-limit=1` did not
+take effect on Windows at all. **The floor settles it:** `example.com` is a
+heading and one paragraph, there is no lighter real page, and it costs 406MB
+with every lever applied. A 512MB container would have about 107MB left for
+the page itself.
+
+The go/no-go agreed before any of it was run — the Guardian under 420MB —
+failed at 613.6MB, and the attempt was stopped at about an hour rather than
+the day Phase 1.2 predicted it would waste. The levers stay in the script
+because a measurement nobody can re-run is a claim, not a result.
+
+**Still unsettled:** whether a scan survives a hard 2 GiB cgroup limit on
+Linux. Every number above is Windows, and summing per-process RSS over-counts
+shared memory. Task 10.1 answers it with `docker run -m`, which needs Docker
+Desktop installed — it is not on this machine.
+
+## 2026-11-04 — The frontend was giving up 30 seconds before the backend did
+
+Task 10.5. `REQUEST_TIMEOUT_MS` was 90 seconds, under a comment saying the
+backend's own ceiling was 30. Both halves of that were wrong, and the
+consequence was a bug with no stack trace and no log line.
+
+A scan spends its page-load budget **twice, in series** — once navigating
+(`scanner.py`, `_goto`) and again as a separate budget for the axe run
+(`scanner.py`, `scan`) — and then `EXPLAIN_TIMEOUT_MS` after both:
+
+| Step | Budget |
+|---|---|
+| Navigating to the page | 30s |
+| Running axe on it | 30s |
+| Claude writing the explanations | 60s |
+| **The backend's worst legitimate case** | **120s** |
+
+So a slow page that was going to succeed would be reported to the person as a
+timeout at 90 seconds, while the backend still had thirty seconds of budget
+left and a finished report on the way. The old comment said "too short a
+timeout here would report a failure for a scan that was about to succeed" —
+and then set one. Nobody had done the arithmetic twice.
+
+**The budget is now derived, not chosen:** 120s of backend ceilings plus a
+45-second allowance for a sleeping host starting a container, importing
+Python, binding uvicorn and launching Chromium. 165 seconds in total.
+`VITE_REQUEST_TIMEOUT_MS` overrides it, because the backend's ceilings are
+environment variables on the host and changeable without a frontend deploy. A
+value *below* the backend's worst case is refused in favour of that worst
+case, with a console warning: such a value cannot prevent a real failure — the
+backend gives up on its own by then — it can only invent one.
+
+**The 45 seconds is the one number here not derived from something.** It is an
+estimate until there is a deployed backend to measure, which is why 10.5 stays
+open.
+
+### The real fix is the test, not the number
+
+Fixing arithmetic once does not stop it drifting again: the two numbers live in
+two languages, and `SCAN_TIMEOUT_MS` can be changed in the Cloud Run dashboard
+by somebody who has never opened `frontend/src/config.ts`.
+`backend/tests/test_deploy_budget.py` reads both sides as text and fails the
+build when they disagree. It is in the **backend's** suite because
+`frontend/src/palette.test.ts` deliberately keeps Node's filesystem types out
+of a browser-only project, and Python reads a `.ts` file as text without
+needing anybody's permission.
+
+Five deliberate mutations were run to confirm it can fail: the frontend
+ignoring a raised ceiling, counting the page budget once instead of twice,
+removing the headroom, a budget site vanishing from `scanner.py`, and
+`.env.example` drifting from `config.py`. All five were caught.
+
+It also caught one of its own: `client.test.ts` was advancing a fake clock by
+`95_000` to prove a request gives up — a third copy of the same number, which
+silently stopped testing anything the moment the budget moved. It now derives
+the figure like everything else.
+
+### A cold start was landing on the worst possible message
+
+`client.ts` cannot parse an HTML error page, so it calls one
+`malformed_response` — and that code said "Worth reporting." and offered no
+retry button. But an HTML 5xx is exactly what Cloud Run answers with while the
+container is still starting. The single most likely cold-start failure was
+being told it was a bug, with no way to try again, when trying again is the
+only thing that fixes it.
+
+Now split by **status**, not code: a 5xx says the server sleeps when nobody is
+using it and offers a retry, while a 2xx or 4xx that is not the contract's
+shape keeps the bug-report wording, because that really is a bug here. The
+code stays one code, so contract rule 1 and every exhaustive switch over it
+are untouched.
+
+### The waiting room needed a longer script
+
+`ScanProgress`'s last message appeared at 25 seconds. With a 165-second budget
+that left the same sentence on screen, unchanged, for 140 seconds — which is
+what a frozen page looks like, and the exact thing that component exists to
+prevent. There is now a stage at 75 seconds, and the ceiling is named from the
+start ("gives up after about three minutes") rather than offered as a
+consolation at the end. The phrase is derived from the budget and rounded
+**up**, so it can never promise to give up sooner than it does.

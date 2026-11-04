@@ -5,8 +5,8 @@ Claude API explains issues and suggests code fixes as JSON.
 
 ## Stack
 - frontend/: React + TypeScript + Tailwind + Vite (deploy: Vercel)
-- backend/: Python 3.14 + FastAPI + Playwright (deploy: host chosen in Phase 10 —
-  a scan peaks near 859MB, so a 512MB free tier is not enough)
+- backend/: Python 3.14 + FastAPI + Playwright (deploy: Google Cloud Run, 2 GiB,
+  scaling to zero — a scan peaks near 859MB, so 512MB free tiers are out)
 
 ## Rules
 - Work in small steps. Related tasks may share a branch and PR.

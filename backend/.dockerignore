@@ -1,0 +1,35 @@
+# What must never reach the image. Task 10.1.
+#
+# The first entry is the one that matters. A .env copied into an image is a
+# secret published to whatever registry the image is pushed to, and it stays
+# there in that layer even if a later layer deletes the file. Cloud Run's
+# environment variables are set in its own configuration instead, which is
+# what task 10.2 does.
+.env
+.env.*
+!.env.example
+
+# A Windows virtualenv is useless in a Linux image, and copying it would both
+# bloat the build context and risk shadowing the packages pip installs.
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Tests and dev tooling are not part of what runs. They are run in CI, against
+# the source, not against the image.
+tests/
+requirements-dev.txt
+pytest.ini
+
+# Nothing in here is needed at runtime: these are the measurement and
+# one-off scripts from Phases 1 and 5.
+scripts/
+
+# The report fixtures and anything else a local run leaves behind.
+*.json
+!app/**/*.json

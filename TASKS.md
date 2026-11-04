@@ -843,13 +843,27 @@ through your app specifically to check.
 
 ## Phase 10 — Deploy
 
-- [ ] **10.0 Choose the backend host** — Phase 1.2 measured a scan peaking near
+- [x] **10.0 Choose the backend host** — Phase 1.2 measured a scan peaking near
   859MB, so a 512MB free tier is out. Compare what is actually available at the
   time (free tiers change constantly — the notes in `DECISIONS.md` are from
   2 Nov 2026 and must be re-verified) on memory ceiling, whether a card is
   required, and idle spin-down behaviour. ~45 min
   **Done when:** `DECISIONS.md` names the host, its memory ceiling, and what it
   costs if the free allowance runs out.
+  *Google Cloud Run, 2 GiB and 1 vCPU, request-based billing, scaling to zero.
+  Re-verifying paid off: Hugging Face Spaces, the most attractive option on
+  2 Nov, now requires a paid plan for any Docker Space, and Render's $7 tier
+  turned out to be 512MB as well — paying there buys always-on, not memory.*
+  *The cost question is answered by arithmetic rather than a guess. With
+  `DAILY_SCAN_LIMIT` at 15 and `SCAN_TIMEOUT_MS` at 30s, the most this service
+  can consume in a month is **7.8%** of Cloud Run's free allowance. The Phase 6
+  ceiling bounds the hosting bill as well as the Anthropic one. Beyond the
+  allowance it is under a tenth of a penny per scan.*
+  *The 512MB-shrink route was measured and closed first: the two levers Phase
+  1.2 had not tested (`chromium-headless-shell`, process flags) are now
+  switches on `memory_check.py` and both are inside the noise. `example.com`
+  costs 406MB with every lever applied, so 512MB leaves ~107MB for the page.
+  Stopped at the pre-agreed go/no-go rather than spending the day.*
 
 - [ ] **10.1 Make the backend deployable** — Playwright needs system browser
   libraries absent from a plain Python image; this is the most common deploy
@@ -859,6 +873,14 @@ through your app specifically to check.
   Windows measurement is indicative only. ~1 hr
   **Done when:** a local container build with a hard memory cap runs a
   successful scan without being killed.
+  *Written, not yet verified: `backend/Dockerfile`, `backend/.dockerignore`
+  and `backend/scripts/container_check.py`. The script builds the image, runs
+  it with `docker run -m`, scans a real page, and reports whether the kernel
+  killed it along with the cgroup's own peak -- the number Phase 1.2 could not
+  get. **Blocked on Docker Desktop, which is not installed on this machine**,
+  so the task stays open: an unverified container is what it exists to
+  prevent. Run `python backend/scripts/container_check.py` once Docker is
+  there, then `--limit 512m` to watch it fail on purpose.*
 
 - [ ] **10.2 Deploy the backend** — service created on the host chosen in 10.0,
   environment variables set in its dashboard (never committed), `/health`
@@ -882,6 +904,25 @@ through your app specifically to check.
   match the backend's and say something honest while waiting. ~45 min
   **Done when:** a scan after an hour of inactivity either succeeds or shows a
   "waking up, try again" message — never a silent failure.
+  *The code half is done; the "after an hour of inactivity" half needs 10.2.*
+  *It was not a wording job. The frontend gave up at 90s under a comment
+  saying the backend's ceiling was 30 — but a scan spends `SCAN_TIMEOUT_MS`
+  twice in series (the navigation, then the axe run) and `EXPLAIN_TIMEOUT_MS`
+  after both, so the backend's worst legitimate case is **120s**. A slow page
+  that was about to succeed was being reported as a timeout with 30 seconds
+  of budget still to run. The budget is now derived — 120s plus a 45s
+  cold-start allowance — overridable by `VITE_REQUEST_TIMEOUT_MS`, and
+  floored at the backend's worst case.*
+  *`backend/tests/test_deploy_budget.py` reads both languages and fails the
+  build when they disagree; five deliberate mutations confirmed it can fail,
+  and it caught a third copy of the same number hiding in `client.test.ts`.*
+  *Also fixed: a cold Cloud Run answers with an HTML 5xx, which `client.ts`
+  calls `malformed_response` — the one code that said "Worth reporting." and
+  offered no retry. Now split by status. And `ScanProgress` gained a stage at
+  75s, because its last message used to appear at 25s and then sit unchanged
+  for 140 seconds.*
+  *Left for 10.2: replace the 45s allowance with a measured cold start, and
+  check Cloud Run's own request timeout is above 165s (its default is 300s).*
 
 - [ ] **10.7 Keep it out of search engines and listings** — a `noindex`
   response header and a `robots.txt` that disallows everything. The app is
