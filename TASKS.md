@@ -769,7 +769,7 @@ through your app specifically to check.
   **Done when:** you complete a whole scan and read a result without touching
   the mouse.
 
-- [ ] **9.2 Semantics and landmarks** — real `<main>`, `<nav>`, `<h1>`, proper
+- [x] **9.2 Semantics and landmarks** — real `<main>`, `<nav>`, `<h1>`, proper
   `<label>` associations, no skipped heading levels, and `<button>` rather than
   clickable `<div>`s. ~1 hr
   **Done when:** your own axe scan of `localhost:5173` returns zero violations.
@@ -782,6 +782,8 @@ through your app specifically to check.
   met once, but it was one manual run on two screens, so the task stays open:
   the loading, clean and error screens are unchecked, and 9.5 is what stops
   it regressing.*
+  *Now a test rather than a promise: see 9.5. Zero WCAG A/AA violations
+  across seven screens, run by the scanner's own axe.*
 
 - [ ] **9.3 Announce results to screen readers** — results appear without a
   page reload, so a screen reader user gets no notification unless you add a
@@ -789,19 +791,51 @@ through your app specifically to check.
   **Done when:** the results container announces itself when it fills, tested
   in a real screen reader (NVDA on Windows is free).
 
-- [ ] **9.4 Contrast audit** — every text-on-background pair in the finished UI
+- [x] **9.4 Contrast audit** — every text-on-background pair in the finished UI
   against 4.5:1 for body text, 3:1 for large. Disabled controls, placeholder
   text and your severity colours are the usual failures. ~45 min
   **Done when:** every pair is recorded with its ratio and none is below
   threshold.
+  *The base palette was already measured in Phase 7. What this task added is
+  the states that only exist now, and both were failing.*
+  *`disabled:opacity-60` -- the idiomatic Tailwind way -- fades the whole
+  element, background and text together, onto whatever is behind it. Measured:
+  the disabled Scan button was **2.90:1** and the disabled input **4.40:1**.
+  WCAG 1.4.3 exempts disabled controls, so neither was a violation; they were
+  fixed anyway, because the disabled button is what somebody looks at for the
+  fifteen seconds a scan takes. Explicit colours now: 6.47:1 and 5.90:1.*
+  *Placeholder text was left to the browser. Chrome's default is about
+  #757575, which is 4.61:1 on white -- a pass by six hundredths, and not the
+  same grey in every browser. Now `muted`, 6.47:1, with `opacity: 1` because
+  Firefox applies its own on top.*
+  *A test fails if `disabled:opacity-` ever reappears anywhere in the app, and
+  another reproduces the 2.90:1 measurement so the reason is not just a
+  comment.*
 
-- [ ] **9.5 Automated accessibility test in the suite** — run axe against your
+- [x] **9.5 Automated accessibility test in the suite** — run axe against your
   own built frontend as part of `npm test`, so a regression fails the build
   instead of waiting to be noticed. ~1 hr
   **Done when:** `npm test` includes an axe check that fails when you
   deliberately remove a label.
+  *`src/a11y.test.tsx` runs axe over seven screens: the access code screen,
+  the report, a clean report, a degraded report, the whole app behind an open
+  gate, a scan in progress, and a failed scan. All clean.*
+  *It uses **the scanner's own vendored axe-core**, imported out of
+  `backend/app/vendor/`, not a second copy from npm. One version in the
+  repository, and the frontend is checked by literally the engine that checks
+  everybody else's pages. A test asserts the version is 4.14.0 so the two
+  cannot drift.*
+  *`color-contrast` is disabled in that file because jsdom does not paint and
+  axe has nothing to measure; 9.4 covers it with arithmetic instead.*
+  *The task's "done when" is itself a test: a deliberately unlabelled input
+  must be caught, and removing the real label from either the scan field or
+  the access code field fails the suite.*
+  *This needed one config change: Vite refuses to read files outside the
+  project root. `fs.allow` is granted to that one vendor directory and only in
+  test mode -- widening it for the dev server would let it serve
+  `backend/.env` to anything that can reach localhost.*
 
-- [ ] **9.6 Reduced motion and zoom** — honour `prefers-reduced-motion`, stay
+- [x] **9.6 Reduced motion and zoom** — honour `prefers-reduced-motion`, stay
   usable at 200% zoom and 320px width. ~45 min
   **Done when:** fully usable at 200% zoom with no horizontal page scrolling.
 
@@ -944,3 +978,16 @@ through your app specifically to check.
   contract when Phase 6 built it -- the wrong way round, since the contract is
   meant to be what the code follows. Now documented as section 1.5, with a
   note saying it was written down late.*
+  *Reduced motion: the only animation in the app is the progress bar, and it
+  is `motion-safe:` so it stops entirely for anybody whose system asks. A test
+  scans every component and fails on an unguarded `animate-*`.*
+  *Zoom and width, measured in a real browser at four combinations -- 320px,
+  200% zoom, and each of those with text at 200% as well. The first three were
+  clean. The fourth was not: the page came out 312px wide in a 301px viewport,
+  because a URL is one unbreakable word and at that size it was wider than the
+  column. Fixed with `overflow-wrap: break-word` on the body; code blocks are
+  exempt, since breaking a line of code changes what it says. All four clean
+  afterwards.*
+  *Measured with an iframe at the target width rather than by resizing the
+  window, which this browser would not do. An iframe's viewport drives media
+  queries the same way a narrow window does.*

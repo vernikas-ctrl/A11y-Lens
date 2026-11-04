@@ -1164,6 +1164,91 @@ later with no clicks at all.
 
 ---
 
+## 2026-11-03 — A11y-Lens is checked by A11y-Lens's own axe
+
+**Decided:** `src/a11y.test.tsx` imports axe-core out of
+`backend/app/vendor/axe-core/` rather than adding `axe-core` as a frontend
+devDependency.
+
+An accessibility tool that fails its own check is the one bug this project
+cannot ship, and until now the proof was me running axe in a browser by hand
+and reporting the result — exactly the kind of check that quietly stops
+happening. It now fails the build.
+
+**One copy of axe in the repository.** A devDependency would be a second,
+upgraded separately, and the two would drift. Worse than the duplication:
+with two versions, the demo report would eventually be describing findings
+from a different engine than the one that produced it. A test asserts the
+version is 4.14.0, so drift is caught rather than assumed away.
+
+**The cost is a Vite config change**, and it is worth stating plainly because
+it touches security. Vite refuses to read files outside the project root, for
+good reason. `fs.allow` is granted to that one vendor directory **and only in
+test mode** — widening it for the dev server would let it serve anything above
+the frontend, `backend/.env` included, to anything that can reach localhost.
+
+**`color-contrast` is disabled in that file.** jsdom does not lay out or
+paint, so axe has nothing real to measure and would produce either false
+passes or noise. `palette.test.ts` does the WCAG arithmetic on the actual
+colour values instead, which needs no browser at all. The split is deliberate:
+axe for structure, arithmetic for colour.
+
+Seven screens are covered, including the three that only exist in a failure:
+a degraded report, a scan in progress, and a failed scan.
+
+---
+
+## 2026-11-03 — Disabled controls got real colours instead of opacity
+
+**Decided:** no `disabled:opacity-*` anywhere in the app.
+
+Tailwind's idiomatic way to show a disabled control is to fade it, and that is
+what the first version did. Fading an element composites the whole thing —
+background and text together — onto whatever is behind it. Measured rather
+than assumed: the disabled Scan button came out at **2.90:1** and the disabled
+address box at **4.40:1**.
+
+**WCAG 1.4.3 exempts disabled controls, so neither was a violation.** They
+were changed anyway. The disabled Scan button is not a decoration: it is what
+somebody looks at for the ten to fifteen seconds a scan takes, and "you may
+not read this while you wait" is not what disabling a control is supposed to
+mean. Explicit colours now, at 6.47:1 and 5.90:1.
+
+The same applies to placeholder text, which had been left to the browser.
+Chrome's default is roughly #757575 — 4.61:1 on white, a pass by six
+hundredths, and a different grey in other browsers. It is now `muted` at
+6.47:1, with `opacity: 1` because Firefox applies its own opacity on top of
+whatever colour is set and would have quietly undone the measurement.
+
+A test fails if `disabled:opacity-` reappears anywhere, and another
+reproduces the 2.90:1 figure, so the reason survives as arithmetic rather than
+as a comment somebody might not believe.
+
+---
+
+## 2026-11-03 — Long words may wrap; code may not
+
+**Found by measuring at the worst combination**, not by review: at a 301px
+viewport with the root font doubled, the page rendered 312 pixels wide and
+scrolled sideways. The cause was a URL — one unbreakable word, wider than the
+column.
+
+`overflow-wrap: break-word` on the body fixes it. Having to scroll
+horizontally to read a paragraph is miserable, and it is what WCAG 1.4.10 is
+about.
+
+**Code blocks are deliberately exempt** and keep scrolling horizontally,
+because breaking a line of code across two lines changes what it says — and
+this app's entire job is showing people code they are meant to copy
+accurately.
+
+Worth recording how it was measured: this browser would not resize its window,
+so the layout was tested in an iframe at the target width. An iframe's
+viewport drives media queries exactly as a narrow window does, which makes it
+a real test rather than a simulation.
+
+---
+
 ## 2026-11-04 — The backend goes on Google Cloud Run, and the daily cap pays for it
 
 **Decided:** The backend deploys to **Google Cloud Run**, configured with

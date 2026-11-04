@@ -66,5 +66,32 @@
   body {
     background-color: var(--color-paper);
     color: var(--color-ink);
+
+    /* --- Task 9.6: long words must not widen the page -------------------
+     *
+     * A URL or a rule id is one unbreakable word, and at a narrow width with
+     * enlarged text one of them is wider than the column. Without this the
+     * page grows to fit it and the whole layout scrolls sideways, which is
+     * what WCAG 1.4.10 is about: having to scroll horizontally to read a
+     * paragraph is miserable at any zoom level.
+     *
+     * Found by measuring, not by guessing -- at 301px with the root font at
+     * 32px, the page was 312px wide. Code blocks are exempt: they scroll on
+     * purpose, because breaking a line of code changes what it says. */
+    overflow-wrap: break-word;
+  }
+
+  /* --- Task 9.4: placeholder text -----------------------------------------
+   *
+   * Set explicitly rather than left to the browser. Chrome's default is
+   * roughly #757575, which measures 4.61:1 on white -- a pass, but by six
+   * hundredths, and it is not the same grey in every browser. `muted` is
+   * 6.47:1 and is ours.
+   *
+   * `opacity: 1` because Firefox applies its own opacity to placeholders on
+   * top of the colour, which would quietly undo the measurement. */
+  ::placeholder {
+    color: var(--color-muted);
+    opacity: 1;
   }
 }

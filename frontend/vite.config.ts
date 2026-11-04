@@ -1,11 +1,29 @@
 /// <reference types="vitest/config" />
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
+/**
+ * The scanner's own copy of axe-core, which `src/a11y.test.tsx` imports so
+ * the frontend is checked by exactly the engine that checks everybody else's
+ * pages. It lives outside this project, and Vite refuses to serve anything
+ * outside the root unless told otherwise.
+ */
+const VENDORED_AXE = fileURLToPath(
+  new URL('../backend/app/vendor/axe-core', import.meta.url),
+)
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  // **Only while testing.** Widening `fs.allow` for the dev server would let
+  // it serve files from anywhere above the frontend -- including
+  // `backend/.env` -- to anything that can reach localhost. It is granted to
+  // one directory, and only in the mode that needs it.
+  server: mode === 'test'
+    ? { fs: { allow: ['.', VENDORED_AXE] } }
+    : undefined,
   test: {
     // The tests render React components, which need something that behaves
     // like a browser. jsdom is that, in Node, without opening a real one.
@@ -28,4 +46,4 @@ export default defineConfig({
       VITE_ACCESS_CODE: '',
     },
   },
-})
+}))
