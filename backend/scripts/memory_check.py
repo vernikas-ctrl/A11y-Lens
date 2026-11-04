@@ -46,6 +46,8 @@ is measured rather than guessed. Blocking images does not blind axe-core: the
 Usage:
     backend/.venv/Scripts/python.exe backend/scripts/memory_check.py
     backend/.venv/Scripts/python.exe backend/scripts/memory_check.py --lean
+    backend/.venv/Scripts/python.exe backend/scripts/memory_check.py --shell
+    backend/.venv/Scripts/python.exe backend/scripts/memory_check.py --shell --flags
     backend/.venv/Scripts/python.exe backend/scripts/memory_check.py <url> ...
 """
 
@@ -76,6 +78,50 @@ MB = 1024 * 1024
 # Decoded images are usually the single largest cost on an image-heavy page.
 # Stylesheets are NOT here: color-contrast needs them.
 LEAN_BLOCKED_RESOURCES = ("image", "media", "font")
+
+# A second, entirely different lever from --lean, added in Phase 10.
+#
+# `chromium.launch()` runs the full Chromium binary. Since Playwright 1.49 that
+# is the real browser in headless mode, UI layer and all. `chromium-headless-
+# shell` is a separate, stripped build with no browser UI -- it is what
+# Playwright used to mean by "headless", and it is already installed alongside
+# the full browser. --lean changes what the page downloads; this changes which
+# browser downloads it, so the two are independent and can be combined.
+HEADLESS_SHELL_CHANNEL = "chromium-headless-shell"
+
+# Flags that change how Chromium splits itself into processes.
+#
+# This matters here specifically because the sampler sums resident memory per
+# process, which counts shared pages once per process. Fewer processes means
+# less of that over-counting -- and, on a real container, genuinely less
+# memory, since each renderer carries its own V8 heap.
+#
+# --single-process is deliberately NOT in this list. It is documented by
+# Chromium as unsupported and unstable, and a scanner that crashes on heavy
+# pages is worse than one that needs a bigger host.
+PROCESS_ARGS = (
+    # /dev/shm is tiny in a default container, and Chromium falls back to disk
+    # rather than failing. Linux-only in effect; harmless on Windows.
+    "--disable-dev-shm-usage",
+    # No zygote process to fork renderers from. Linux-only, listed here so the
+    # Windows and Linux runs use the same argument list.
+    "--no-zygote",
+    # One renderer, however many frames the page has. Ad-heavy pages like the
+    # Guardian front page are mostly iframes, and each would otherwise get its
+    # own process with its own heap.
+    "--renderer-process-limit=1",
+    "--disable-gpu",
+)
+
+
+def launch_options(shell: bool, flags: bool) -> dict:
+    """Translate the two switches into Playwright launch keywords."""
+    options: dict = {}
+    if shell:
+        options["channel"] = HEADLESS_SHELL_CHANNEL
+    if flags:
+        options["args"] = list(PROCESS_ARGS)
+    return options
 
 
 class TreeSampler(threading.Thread):
@@ -126,17 +172,19 @@ class TreeSampler(threading.Thread):
         self.join(timeout=5)
 
 
-def measure_page(url: str, lean: bool = False) -> dict:
+def measure_page(url: str, lean: bool = False, shell: bool = False,
+                 flags: bool = False) -> dict:
     """Launch a browser, load one page, run axe over it, report the peak."""
     sampler = TreeSampler()
     sampler.start()
     started = time.monotonic()
     result = {"url": url, "title": "", "axe_ran": False,
-              "violations": None, "error": None, "lean": lean}
+              "violations": None, "error": None, "lean": lean,
+              "shell": shell, "flags": flags}
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch()
+            browser = p.chromium.launch(**launch_options(shell, flags))
             try:
                 if lean:
                     # A smaller viewport means fewer pixels to composite, which
@@ -194,16 +242,21 @@ def measure_page(url: str, lean: bool = False) -> dict:
 def main() -> int:
     args = sys.argv[1:]
     lean = "--lean" in args
+    shell = "--shell" in args
+    flags = "--flags" in args
     urls = [a for a in args if not a.startswith("--")] or DEFAULT_PAGES
     results = []
 
     print("mode: " + ("lean (images, media and fonts blocked)"
                       if lean else "worst case (everything loaded)"))
+    print("browser: " + ("chromium-headless-shell" if shell
+                         else "full chromium (default)"))
+    print("process flags: " + (", ".join(PROCESS_ARGS) if flags else "none"))
     print()
 
     for url in urls:
         print("measuring " + url + " ...", flush=True)
-        r = measure_page(url, lean=lean)
+        r = measure_page(url, lean=lean, shell=shell, flags=flags)
         results.append(r)
         if r["error"]:
             print("  WARNING: " + r["error"])
