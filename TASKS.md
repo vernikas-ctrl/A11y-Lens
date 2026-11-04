@@ -839,6 +839,14 @@ through your app specifically to check.
   Windows measurement is indicative only. ~1 hr
   **Done when:** a local container build with a hard memory cap runs a
   successful scan without being killed.
+  *Written, not yet verified: `backend/Dockerfile`, `backend/.dockerignore`
+  and `backend/scripts/container_check.py`. The script builds the image, runs
+  it with `docker run -m`, scans a real page, and reports whether the kernel
+  killed it along with the cgroup's own peak -- the number Phase 1.2 could not
+  get. **Blocked on Docker Desktop, which is not installed on this machine**,
+  so the task stays open: an unverified container is what it exists to
+  prevent. Run `python backend/scripts/container_check.py` once Docker is
+  there, then `--limit 512m` to watch it fail on purpose.*
 
 - [ ] **10.2 Deploy the backend** — service created on the host chosen in 10.0,
   environment variables set in its dashboard (never committed), `/health`
