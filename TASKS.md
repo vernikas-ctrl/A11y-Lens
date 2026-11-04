@@ -809,13 +809,27 @@ through your app specifically to check.
 
 ## Phase 10 — Deploy
 
-- [ ] **10.0 Choose the backend host** — Phase 1.2 measured a scan peaking near
+- [x] **10.0 Choose the backend host** — Phase 1.2 measured a scan peaking near
   859MB, so a 512MB free tier is out. Compare what is actually available at the
   time (free tiers change constantly — the notes in `DECISIONS.md` are from
   2 Nov 2026 and must be re-verified) on memory ceiling, whether a card is
   required, and idle spin-down behaviour. ~45 min
   **Done when:** `DECISIONS.md` names the host, its memory ceiling, and what it
   costs if the free allowance runs out.
+  *Google Cloud Run, 2 GiB and 1 vCPU, request-based billing, scaling to zero.
+  Re-verifying paid off: Hugging Face Spaces, the most attractive option on
+  2 Nov, now requires a paid plan for any Docker Space, and Render's $7 tier
+  turned out to be 512MB as well — paying there buys always-on, not memory.*
+  *The cost question is answered by arithmetic rather than a guess. With
+  `DAILY_SCAN_LIMIT` at 15 and `SCAN_TIMEOUT_MS` at 30s, the most this service
+  can consume in a month is **7.8%** of Cloud Run's free allowance. The Phase 6
+  ceiling bounds the hosting bill as well as the Anthropic one. Beyond the
+  allowance it is under a tenth of a penny per scan.*
+  *The 512MB-shrink route was measured and closed first: the two levers Phase
+  1.2 had not tested (`chromium-headless-shell`, process flags) are now
+  switches on `memory_check.py` and both are inside the noise. `example.com`
+  costs 406MB with every lever applied, so 512MB leaves ~107MB for the page.
+  Stopped at the pre-agreed go/no-go rather than spending the day.*
 
 - [ ] **10.1 Make the backend deployable** — Playwright needs system browser
   libraries absent from a plain Python image; this is the most common deploy

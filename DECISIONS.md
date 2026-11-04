@@ -1161,3 +1161,88 @@ in. Five tests fail if the two are swapped, and a comment in the code says so.
 Verified with the backend genuinely stopped rather than mocked: the waking
 screen appears, and starting the backend mid-wait opened the app ten seconds
 later with no clicks at all.
+
+---
+
+## 2026-11-04 — The backend goes on Google Cloud Run, and the daily cap pays for it
+
+**Decided:** The backend deploys to **Google Cloud Run**, configured with
+**2 GiB of memory and 1 vCPU**, request-based billing, scaling to zero when
+idle. Render, Fly.io and Hugging Face Spaces were all considered and rejected.
+
+**What it costs.** Nothing, and the daily cap from Phase 6 is what makes that
+a fact rather than a hope. Cloud Run's free allowance is 180,000 vCPU-seconds,
+360,000 GiB-seconds and 2 million requests per month. `DAILY_SCAN_LIMIT` is 15
+and `SCAN_TIMEOUT_MS` is 30 seconds, so the most this service can physically
+consume in a 31-day month is:
+
+| | Worst case | Free allowance | Used |
+|---|---|---|---|
+| Memory | 465 scans x 2 GiB x 30s = 27,900 GiB-s | 360,000 | **7.8%** |
+| CPU | 465 scans x 1 vCPU x 30s = 13,950 vCPU-s | 180,000 | **7.8%** |
+| Requests | a few thousand | 2,000,000 | negligible |
+
+The ceiling built in Phase 6 to stop the Anthropic bill running away turns out
+to bound the hosting bill too, and by a factor of twelve. Leaving the free
+tier would require raising `DAILY_SCAN_LIMIT` past roughly 190 a day.
+
+**If the allowance did run out,** the rate beyond it is about $0.000024 per
+vCPU-second and $0.0000025 per GiB-second in a Tier 1 region, which works out
+at **under a tenth of a penny per scan** (about $0.0009 for a full 30-second
+scan at this configuration). These rates were cross-checked across several
+sources; Google's own pricing page could not be fetched directly, so re-check
+them before relying on the figure.
+
+**Why not the others.**
+
+- **Render** — 512MB on both the free and the $7 Starter plan, so paying does
+  not buy memory. The 2GB Standard instance is $25/month, which is a lot for
+  a demo that is idle almost all the time and has no usage-based floor.
+- **Hugging Face Spaces** — 16GB free was the most attractive option on paper
+  and it is now gone: as of 2026, creating a Docker or Gradio Space requires a
+  paid plan. Free personal accounts get static Spaces only. This is exactly
+  the kind of change Phase 1.2 warned would happen, which is why that note
+  said to re-verify.
+- **Fly.io** — genuinely good and the least work (`fly deploy` on a Dockerfile,
+  5-15s cold starts), but there is no free tier for new accounts and a 2GB
+  machine is $12.70/month always-on, or $1-3 with auto-stop. Real money for
+  something Cloud Run does for nothing.
+
+**The cost of Cloud Run, honestly stated:** it is the most setup of the three
+(a Dockerfile, a `gcloud` toolchain and a billing account), it needs a card on
+file even though nothing should ever charge it, and its cold start is the
+slowest at 20-40 seconds. That last one is survivable only because task 8.10
+built the waking screen — on a host with no cold start it would be decoration,
+and here it is load-bearing. Set a $0 budget alert at setup so an unexpected
+charge is noticed rather than discovered.
+
+**First, the path not taken.** The original choice was to shrink a scan to fit
+512MB instead of choosing a bigger host. That is now measured and closed.
+Phase 1.2 had shown content blocking saving 80MB of 859; the two levers it had
+*not* tested were the `chromium-headless-shell` build and flags that change how
+Chromium splits into processes. Both are now switches on `memory_check.py`.
+Measured 4 Nov 2026, re-baselined the same day because the Guardian front page
+had grown to 636MB from 536MB:
+
+| Page | baseline | `--shell` | `--flags` | all three |
+|---|---|---|---|---|
+| Wikipedia, "World War II" | 840.6 MB | 894.9 | 847.8 | 861.0 |
+| Guardian front page | 636.4 MB | 636.8 | 641.4 | 613.6 |
+| `example.com` | 406.6 MB | - | - | 405.1 |
+
+Every lever is inside the run-to-run noise band and two measured worse. The
+process count stayed at 5 throughout, so `--renderer-process-limit=1` did not
+take effect on Windows at all. **The floor settles it:** `example.com` is a
+heading and one paragraph, there is no lighter real page, and it costs 406MB
+with every lever applied. A 512MB container would have about 107MB left for
+the page itself.
+
+The go/no-go agreed before any of it was run — the Guardian under 420MB —
+failed at 613.6MB, and the attempt was stopped at about an hour rather than
+the day Phase 1.2 predicted it would waste. The levers stay in the script
+because a measurement nobody can re-run is a claim, not a result.
+
+**Still unsettled:** whether a scan survives a hard 2 GiB cgroup limit on
+Linux. Every number above is Windows, and summing per-process RSS over-counts
+shared memory. Task 10.1 answers it with `docker run -m`, which needs Docker
+Desktop installed — it is not on this machine.
