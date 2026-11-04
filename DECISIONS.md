@@ -1413,3 +1413,44 @@ prevent. There is now a stage at 75 seconds, and the ceiling is named from the
 start ("gives up after about three minutes") rather than offered as a
 consolation at the end. The phrase is derived from the budget and rounded
 **up**, so it can never promise to give up sooner than it does.
+
+---
+
+## 2026-11-04 — CI runs both suites, and the browser is cached on the version that decides it
+
+Task 11.1. `.github/workflows/tests.yml`, triggered on every pull request and
+on pushes to `main`.
+
+**Two jobs, not one.** The backend and frontend fail for unrelated reasons.
+One combined job would report both as a single red cross and leave whoever
+opened the pull request to go reading logs to find out which half broke.
+
+**Both versions are pinned** — Python 3.14, Node 24. `3.x` would quietly move
+the floor under a suite that has only ever been run against one version, on
+some morning when nobody changed anything.
+
+**The Playwright cache is keyed on `requirements.txt`, not the lockfile of
+everything.** The pinned `playwright==1.64.1` is what decides which browser
+build is wanted; keying on anything broader would throw away a 150MB download
+every time an unrelated dependency moved. The *system libraries* are installed
+on every run regardless, because they go into the runner image rather than
+into a cached directory — so a cache hit skips the download and still runs
+`install-deps`.
+
+**`contents: read`.** These jobs run tests. A token that cannot write to the
+repository cannot be persuaded to.
+
+**Also on `push` to main**, not only on pull requests: a pull request is
+tested against its own head, so two that each pass can still break `main`
+together.
+
+Worth recording what CI actually depends on from outside: the backend suite
+launches a real Chromium, but against `tests/fixtures/broken.html` on disk
+rather than a live site, so it does not rest on anybody else's uptime. The one
+exception is **DNS** — the endpoint tests post `example.com` and `url_safety`
+resolves it for real, which is deliberate and is the only outside thing the
+job needs.
+
+**Not yet verified at the time of writing:** this has never run on GitHub. The
+task stays unticked until a pull request shows both suites green and a
+deliberately broken test shows red.
