@@ -1246,3 +1246,85 @@ because a measurement nobody can re-run is a claim, not a result.
 Linux. Every number above is Windows, and summing per-process RSS over-counts
 shared memory. Task 10.1 answers it with `docker run -m`, which needs Docker
 Desktop installed — it is not on this machine.
+
+## 2026-11-04 — The frontend was giving up 30 seconds before the backend did
+
+Task 10.5. `REQUEST_TIMEOUT_MS` was 90 seconds, under a comment saying the
+backend's own ceiling was 30. Both halves of that were wrong, and the
+consequence was a bug with no stack trace and no log line.
+
+A scan spends its page-load budget **twice, in series** — once navigating
+(`scanner.py`, `_goto`) and again as a separate budget for the axe run
+(`scanner.py`, `scan`) — and then `EXPLAIN_TIMEOUT_MS` after both:
+
+| Step | Budget |
+|---|---|
+| Navigating to the page | 30s |
+| Running axe on it | 30s |
+| Claude writing the explanations | 60s |
+| **The backend's worst legitimate case** | **120s** |
+
+So a slow page that was going to succeed would be reported to the person as a
+timeout at 90 seconds, while the backend still had thirty seconds of budget
+left and a finished report on the way. The old comment said "too short a
+timeout here would report a failure for a scan that was about to succeed" —
+and then set one. Nobody had done the arithmetic twice.
+
+**The budget is now derived, not chosen:** 120s of backend ceilings plus a
+45-second allowance for a sleeping host starting a container, importing
+Python, binding uvicorn and launching Chromium. 165 seconds in total.
+`VITE_REQUEST_TIMEOUT_MS` overrides it, because the backend's ceilings are
+environment variables on the host and changeable without a frontend deploy. A
+value *below* the backend's worst case is refused in favour of that worst
+case, with a console warning: such a value cannot prevent a real failure — the
+backend gives up on its own by then — it can only invent one.
+
+**The 45 seconds is the one number here not derived from something.** It is an
+estimate until there is a deployed backend to measure, which is why 10.5 stays
+open.
+
+### The real fix is the test, not the number
+
+Fixing arithmetic once does not stop it drifting again: the two numbers live in
+two languages, and `SCAN_TIMEOUT_MS` can be changed in the Cloud Run dashboard
+by somebody who has never opened `frontend/src/config.ts`.
+`backend/tests/test_deploy_budget.py` reads both sides as text and fails the
+build when they disagree. It is in the **backend's** suite because
+`frontend/src/palette.test.ts` deliberately keeps Node's filesystem types out
+of a browser-only project, and Python reads a `.ts` file as text without
+needing anybody's permission.
+
+Five deliberate mutations were run to confirm it can fail: the frontend
+ignoring a raised ceiling, counting the page budget once instead of twice,
+removing the headroom, a budget site vanishing from `scanner.py`, and
+`.env.example` drifting from `config.py`. All five were caught.
+
+It also caught one of its own: `client.test.ts` was advancing a fake clock by
+`95_000` to prove a request gives up — a third copy of the same number, which
+silently stopped testing anything the moment the budget moved. It now derives
+the figure like everything else.
+
+### A cold start was landing on the worst possible message
+
+`client.ts` cannot parse an HTML error page, so it calls one
+`malformed_response` — and that code said "Worth reporting." and offered no
+retry button. But an HTML 5xx is exactly what Cloud Run answers with while the
+container is still starting. The single most likely cold-start failure was
+being told it was a bug, with no way to try again, when trying again is the
+only thing that fixes it.
+
+Now split by **status**, not code: a 5xx says the server sleeps when nobody is
+using it and offers a retry, while a 2xx or 4xx that is not the contract's
+shape keeps the bug-report wording, because that really is a bug here. The
+code stays one code, so contract rule 1 and every exhaustive switch over it
+are untouched.
+
+### The waiting room needed a longer script
+
+`ScanProgress`'s last message appeared at 25 seconds. With a 165-second budget
+that left the same sentence on screen, unchanged, for 140 seconds — which is
+what a frozen page looks like, and the exact thing that component exists to
+prevent. There is now a stage at 75 seconds, and the ceiling is named from the
+start ("gives up after about three minutes") rather than offered as a
+consolation at the end. The phrase is derived from the budget and rounded
+**up**, so it can never promise to give up sooner than it does.

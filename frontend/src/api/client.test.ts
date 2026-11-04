@@ -12,6 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { REQUEST_TIMEOUT_MS } from '../config'
 import { checkHealth, scanUrl, verifyCode } from './client'
 import type { Report } from './types'
 
@@ -258,7 +259,11 @@ describe('failures that never reach the backend', () => {
     )
 
     const pending = scanUrl('https://example.com')
-    await vi.advanceTimersByTimeAsync(95_000)
+    // Past the budget, whatever the budget currently is. This line used to
+    // say 95_000, which was a second copy of a number that lives in config --
+    // and task 10.5 raised that number to 165_000, at which point the test
+    // sat waiting for an abort that was not due for another seventy seconds.
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 5_000)
     const result = await pending
 
     if (result.ok) throw new Error('expected failure')

@@ -52,6 +52,20 @@ function errorBody(code: string, message: string, detail: string | null = null) 
   return { error: { code, message, detail } }
 }
 
+/**
+ * A response that is not the contract's shape at all. Task 10.5: this is what
+ * a free host answers with while it is still starting -- its own error page,
+ * in HTML, from the load balancer rather than from our app.
+ */
+function answersWithHtml(status: number) {
+  return vi.fn(async (_url: string, _init: RequestInit) =>
+    new Response('<html><body><h1>Service Unavailable</h1></body></html>', {
+      status,
+      headers: { 'Content-Type': 'text/html' },
+    }),
+  )
+}
+
 /** Fills the address box and submits. */
 async function scan(user: ReturnType<typeof userEvent.setup>, url = 'https://example.com') {
   await user.type(screen.getByLabelText(/address of the page/i), url)
@@ -412,6 +426,54 @@ it.each([
     await scan(user)
 
     expect(await screen.findByText(/try again in 42 seconds/i)).toBeVisible()
+  })
+
+  it('treats a host that is still starting as a wait, not a bug', async () => {
+    // Task 10.5. This is the likeliest cold-start failure and it used to get
+    // the worst answer: `client.ts` cannot parse an HTML error page, so it
+    // becomes `malformed_response` -- which said "Worth reporting." and
+    // offered no retry. Retrying is the only thing that fixes it, and
+    // reporting it achieves nothing.
+    vi.stubGlobal('fetch', answersWithHtml(503))
+    const user = userEvent.setup()
+    render(<ScanPanel />)
+
+    await scan(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/still starting up|sleeps when nobody/i)
+    expect(alert).not.toHaveTextContent(/worth reporting/i)
+    expect(screen.getByRole('button', { name: /try the scan again/i })).toBeVisible()
+  })
+
+  it('still calls a malformed answer a bug when the status is not the host', async () => {
+    // A 200 that is not the contract's shape is our mistake, not a sleeping
+    // server. Somebody should hear about it, and trying again will not help.
+    vi.stubGlobal('fetch', answersWithHtml(200))
+    const user = userEvent.setup()
+    render(<ScanPanel />)
+
+    await scan(user)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/not something you did wrong/i)
+    expect(alert).toHaveTextContent(/worth reporting/i)
+    expect(screen.queryByRole('button', { name: /try the scan again/i })).not.toBeInTheDocument()
+  })
+
+  it('recovers when the woken host answers properly', async () => {
+    vi.stubGlobal('fetch', answersWithHtml(503))
+    const user = userEvent.setup()
+    render(<ScanPanel />)
+
+    await scan(user)
+    await screen.findByRole('alert')
+
+    // The second request lands on a container that has finished starting.
+    vi.stubGlobal('fetch', answers(report()))
+    await user.click(screen.getByRole('button', { name: /try the scan again/i }))
+
+    expect(await screen.findByRole('heading', { name: /1 problem found/i })).toBeVisible()
   })
 })
 

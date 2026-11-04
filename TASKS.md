@@ -870,6 +870,25 @@ through your app specifically to check.
   match the backend's and say something honest while waiting. ~45 min
   **Done when:** a scan after an hour of inactivity either succeeds or shows a
   "waking up, try again" message — never a silent failure.
+  *The code half is done; the "after an hour of inactivity" half needs 10.2.*
+  *It was not a wording job. The frontend gave up at 90s under a comment
+  saying the backend's ceiling was 30 — but a scan spends `SCAN_TIMEOUT_MS`
+  twice in series (the navigation, then the axe run) and `EXPLAIN_TIMEOUT_MS`
+  after both, so the backend's worst legitimate case is **120s**. A slow page
+  that was about to succeed was being reported as a timeout with 30 seconds
+  of budget still to run. The budget is now derived — 120s plus a 45s
+  cold-start allowance — overridable by `VITE_REQUEST_TIMEOUT_MS`, and
+  floored at the backend's worst case.*
+  *`backend/tests/test_deploy_budget.py` reads both languages and fails the
+  build when they disagree; five deliberate mutations confirmed it can fail,
+  and it caught a third copy of the same number hiding in `client.test.ts`.*
+  *Also fixed: a cold Cloud Run answers with an HTML 5xx, which `client.ts`
+  calls `malformed_response` — the one code that said "Worth reporting." and
+  offered no retry. Now split by status. And `ScanProgress` gained a stage at
+  75s, because its last message used to appear at 25s and then sit unchanged
+  for 140 seconds.*
+  *Left for 10.2: replace the 45s allowance with a measured cold start, and
+  check Cloud Run's own request timeout is above 165s (its default is 300s).*
 
 - [ ] **10.7 Keep it out of search engines and listings** — a `noindex`
   response header and a `robots.txt` that disallows everything. The app is

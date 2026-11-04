@@ -21,14 +21,40 @@
  */
 
 import { useEffect, useState } from 'react'
+import { REQUEST_TIMEOUT_MS } from '../config'
 
-/** Roughly how a scan actually spends its time, from Phase 1's measurements. */
+/**
+ * Roughly how a scan actually spends its time, from Phase 1's measurements.
+ *
+ * The last stage used to be the 25-second one. Task 10.5 raised the budget to
+ * about three minutes -- the backend's own ceilings add up to two of those, so
+ * giving up sooner meant reporting scans that were about to succeed as
+ * failures -- which left "taking longer than usual" on screen, unchanged, for
+ * well over two minutes. Text that stops changing is how a page starts to
+ * look frozen, which is the thing this component exists to prevent.
+ */
 const STAGES: ReadonlyArray<{ after: number; says: string }> = [
   { after: 0, says: 'Opening the page…' },
   { after: 3_000, says: 'Checking it against the accessibility rules…' },
   { after: 8_000, says: 'Still going. A slow page, or the server waking up…' },
   { after: 25_000, says: 'This is taking longer than usual. It has not failed yet.' },
+  { after: 75_000, says: 'Still waiting. Nothing has gone wrong; this one is just slow.' },
 ]
+
+const MINUTE_WORDS = ['', 'a minute', 'two minutes', 'three minutes', 'four minutes']
+
+/**
+ * "about three minutes", from the budget itself.
+ *
+ * Written out rather than left as a number of seconds, and derived rather than
+ * typed, so the sentence cannot end up describing a budget the app no longer
+ * has. Rounded **up**: saying it gives up later than it really does is the
+ * harmless direction to be wrong in.
+ */
+function howLongItWaits(): string {
+  const minutes = Math.ceil(REQUEST_TIMEOUT_MS / 60_000)
+  return MINUTE_WORDS[minutes] ?? `${minutes} minutes`
+}
 
 interface Props {
   /** Shown so the person can see which page they are waiting on. */
@@ -74,9 +100,13 @@ export default function ScanProgress({ url, onCancel }: Props) {
         <div className="h-full w-1/3 motion-safe:animate-pulse bg-primary" />
       </div>
 
+      {/* Always visible, rather than appearing once the wait is already
+          uncomfortable. Somebody deciding whether to keep waiting wants the
+          ceiling at the start, not as a consolation at the end. */}
       <p className="mt-3 text-sm text-muted">
         A scan usually takes a few seconds. The first one after a quiet period
-        takes longer, because the server has to wake up.
+        takes longer, because the server has to wake up. It gives up after
+        about {howLongItWaits()} rather than waiting forever, and says so.
       </p>
 
       {onCancel && (
