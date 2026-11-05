@@ -53,7 +53,7 @@ src/
     client.ts     The only module that talks to the backend
   config.ts       Backend address and access code, from the environment
   index.css       Tailwind, and the palette (Tailwind v4 configures in CSS)
-  App.tsx         A placeholder until task 8.0
+  App.tsx         The page itself: gate, scan form, report
   test/setup.ts   Runs before every test file
 scripts/
   smoke.ts        The live check against a real backend
