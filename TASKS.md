@@ -943,18 +943,35 @@ through your app specifically to check.
 
 ## Phase 11 — CI and documentation
 
-- [ ] **11.1 Run both test suites on every PR** — a GitHub Actions workflow
+- [x] **11.1 Run both test suites on every PR** — a GitHub Actions workflow
   running `pytest` and `npm test`. ~1 hr
   **Done when:** a PR shows both suites passing as checks, and a deliberately
   broken test blocks the PR.
-  *`.github/workflows/tests.yml` written: two jobs, because the halves fail
-  for unrelated reasons and one combined job would hide which broke. Python
+  *`.github/workflows/tests.yml`: two jobs, because the halves fail for
+  unrelated reasons and one combined job would hide which broke. Python
   pinned to 3.14 and Node to 24 — the versions these tests have actually been
   run against. Chromium is cached on the pinned Playwright version, with the
   system libraries installed either way, since they go into the runner image
   rather than a cached directory.*
-  *Unticked until a real pull request shows it. Both halves of the "Done
-  when" need a run that exists on GitHub, not on this laptop.*
+  *Both halves seen, 4–5 Nov. **Green:** PR #15, two checks, 56s; the merge
+  to `main` 50s. **Red:** PR #16 set `SCAN_BUDGETS_SPENT` back to 1 and both
+  jobs failed — backend `1 failed, 292 passed, 1 skipped`, frontend
+  `expected 90000 to be 120000`. Opened as a draft so GitHub itself refused
+  to merge it; closed and the branch deleted afterwards.*
+  *Two things the runs taught us. One test skips on CI —
+  `test_auth.py:188`, "no backend/.env on this machine" — which is correct,
+  since `.env` is git-ignored and never reaches a runner. And **the checks
+  do not yet block anything**: see 11.4.*
+
+- [ ] **11.4 Make the checks actually block a merge** — 11.1 proved the
+  checks report correctly, but nothing stops a merge while they are still
+  running. PR #15 was merged **nine seconds** after it opened; its checks
+  finished about 47 seconds later, reporting a pass on code already on
+  `main`. Branch protection on `main` requiring both checks. ~15 min
+  **Done when:** a pull request with a failing check cannot be merged, and
+  the merge button says so.
+  *Repository Settings, so it needs Vernika — not something to be done for
+  her. Worth doing before 10.2, when a broken deploy starts costing money.*
 
 - [ ] **11.2 Finish the README** — what it does, a screenshot, the demo link,
   local setup for both halves, environment variables, how to deploy, and the
