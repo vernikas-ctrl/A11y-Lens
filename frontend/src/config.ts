@@ -89,7 +89,7 @@ const BACKEND_EXPLAIN_TIMEOUT_MS = 60_000
  * checks both places in `scanner.py` are still there, which means adding a
  * third breaks the build instead of the deployed app.
  */
-const SCAN_BUDGETS_SPENT = 2
+const SCAN_BUDGETS_SPENT = 1
 
 /** The longest the backend can legitimately take, by its own configuration. */
 export const BACKEND_WORST_CASE_MS =
