@@ -979,6 +979,19 @@ through your app specifically to check.
   is the most-read file in the repo. ~1 hr
   **Done when:** you follow your own README from a fresh clone and reach a
   working local app without consulting anything else.
+  *Written, and walked through from a genuine fresh clone (`git clone` into
+  a temp directory, nothing copied across). Every documented step ran
+  verbatim: `python -m venv`, `pip install -r requirements-dev.txt`,
+  `playwright install chromium`, `cp .env.example .env`, `npm install`.
+  The backend accepted the configuration and printed exactly what the README
+  promises — "ANTHROPIC_API_KEY is still the placeholder value. Scanning will
+  work; explanations will not." Both documented test commands gave the
+  documented numbers: 294 and 184.*
+  *Three things still missing, so the box stays open: the **screenshot**
+  (needs the app running, which has not been started), the **demo link**
+  (needs 10.3), and the final step of the walkthrough — `uvicorn` and
+  `npm run dev` actually up with the page open. Everything before that step
+  is verified.*
 
 - [ ] **11.3 Tidy DECISIONS.md** — read it end to end, fix what's no longer
   true, add anything you decided but never wrote down. ~30 min
