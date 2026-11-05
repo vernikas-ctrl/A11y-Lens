@@ -1451,6 +1451,38 @@ exception is **DNS** — the endpoint tests post `example.com` and `url_safety`
 resolves it for real, which is deliberate and is the only outside thing the
 job needs.
 
-**Not yet verified at the time of writing:** this has never run on GitHub. The
-task stays unticked until a pull request shows both suites green and a
-deliberately broken test shows red.
+### Verified, 5 November — including the half that had to fail
+
+**Green:** PR #15, both checks, 56 seconds; the merge commit on `main`, 50
+seconds. The pinned versions, the cached Chromium and the action versions all
+work on a real runner.
+
+**Red:** PR #16 set `SCAN_BUDGETS_SPENT` back to 1 — the exact mistake task
+10.5 existed to fix — and was opened as a **draft**, so GitHub itself refused
+to merge it rather than relying on a DO NOT MERGE label. Backend:
+`1 failed, 292 passed, 1 skipped`. Frontend: `expected 90000 to be 120000`.
+Closed and the branch deleted.
+
+**The prediction was wrong, in a useful direction.** The pull request said to
+expect the backend red and the frontend green. Both went red: the frontend's
+own `config.test.ts` asserts the derived total, which falls to 90,000 when
+the budget is counted once. So both sides of the app independently catch the
+same regression — better than designed, but it is written down here because
+a prediction that was wrong is worth more than one that was never made.
+
+**One test skips on CI:** `test_auth.py:188`, "no backend/.env on this
+machine". Correct and expected — `.env` is git-ignored and never reaches a
+runner — but recorded, because a silently skipped test is how a suite starts
+meaning less than it appears to.
+
+### What this still does not do
+
+**The checks do not block a merge.** PR #15 was merged nine seconds after it
+opened, and its checks finished about 47 seconds after that: a pass reported
+on code that was already on `main`. Right now the checks are an observation,
+not a gate.
+
+Closing that needs branch protection on `main` requiring both checks, which
+is a repository *setting* rather than a file in the repository, so it is
+task 11.4 and it belongs to Vernika. Worth doing before 10.2, because a
+broken deploy stops being free at that point.
