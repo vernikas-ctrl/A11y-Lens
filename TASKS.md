@@ -943,18 +943,35 @@ through your app specifically to check.
 
 ## Phase 11 — CI and documentation
 
-- [ ] **11.1 Run both test suites on every PR** — a GitHub Actions workflow
+- [x] **11.1 Run both test suites on every PR** — a GitHub Actions workflow
   running `pytest` and `npm test`. ~1 hr
   **Done when:** a PR shows both suites passing as checks, and a deliberately
   broken test blocks the PR.
-  *`.github/workflows/tests.yml` written: two jobs, because the halves fail
-  for unrelated reasons and one combined job would hide which broke. Python
+  *`.github/workflows/tests.yml`: two jobs, because the halves fail for
+  unrelated reasons and one combined job would hide which broke. Python
   pinned to 3.14 and Node to 24 — the versions these tests have actually been
   run against. Chromium is cached on the pinned Playwright version, with the
   system libraries installed either way, since they go into the runner image
   rather than a cached directory.*
-  *Unticked until a real pull request shows it. Both halves of the "Done
-  when" need a run that exists on GitHub, not on this laptop.*
+  *Both halves seen, 4–5 Nov. **Green:** PR #15, two checks, 56s; the merge
+  to `main` 50s. **Red:** PR #16 set `SCAN_BUDGETS_SPENT` back to 1 and both
+  jobs failed — backend `1 failed, 292 passed, 1 skipped`, frontend
+  `expected 90000 to be 120000`. Opened as a draft so GitHub itself refused
+  to merge it; closed and the branch deleted afterwards.*
+  *Two things the runs taught us. One test skips on CI —
+  `test_auth.py:188`, "no backend/.env on this machine" — which is correct,
+  since `.env` is git-ignored and never reaches a runner. And **the checks
+  do not yet block anything**: see 11.4.*
+
+- [ ] **11.4 Make the checks actually block a merge** — 11.1 proved the
+  checks report correctly, but nothing stops a merge while they are still
+  running. PR #15 was merged **nine seconds** after it opened; its checks
+  finished about 47 seconds later, reporting a pass on code already on
+  `main`. Branch protection on `main` requiring both checks. ~15 min
+  **Done when:** a pull request with a failing check cannot be merged, and
+  the merge button says so.
+  *Repository Settings, so it needs Vernika — not something to be done for
+  her. Worth doing before 10.2, when a broken deploy starts costing money.*
 
 - [ ] **11.2 Finish the README** — what it does, a screenshot, the demo link,
   local setup for both halves, environment variables, how to deploy, and the
@@ -962,6 +979,23 @@ through your app specifically to check.
   is the most-read file in the repo. ~1 hr
   **Done when:** you follow your own README from a fresh clone and reach a
   working local app without consulting anything else.
+  *Written, and walked through from a genuine fresh clone (`git clone` into
+  a temp directory, nothing copied across). Every documented step ran
+  verbatim: `python -m venv`, `pip install -r requirements-dev.txt`,
+  `playwright install chromium`, `cp .env.example .env`, `npm install`.
+  The backend accepted the configuration and printed exactly what the README
+  promises — "ANTHROPIC_API_KEY is still the placeholder value. Scanning will
+  work; explanations will not." Both documented test commands gave the
+  documented numbers: 294 and 184.*
+  *Finished 18 Nov. The last walkthrough step was run — both servers up,
+  `/health` answering `{"status": "ok", "version": "0.1.0"}` and the app on
+  screen — though from the working copy rather than the temp clone, because
+  Windows had cleared the temp folder in the intervening fortnight. The
+  screenshot in `docs/screenshot.png` was taken with the project's own
+  Playwright after the browser extension's capture timed out three times.*
+  *Still missing one listed item: the **demo link**, which cannot exist
+  until 10.3 deploys something to link to. The README says so in its status
+  line. That is the only reason this box is not ticked.*
 
 - [ ] **11.3 Tidy DECISIONS.md** — read it end to end, fix what's no longer
   true, add anything you decided but never wrote down. ~30 min
