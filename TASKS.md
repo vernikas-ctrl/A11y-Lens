@@ -987,11 +987,15 @@ through your app specifically to check.
   promises — "ANTHROPIC_API_KEY is still the placeholder value. Scanning will
   work; explanations will not." Both documented test commands gave the
   documented numbers: 294 and 184.*
-  *Three things still missing, so the box stays open: the **screenshot**
-  (needs the app running, which has not been started), the **demo link**
-  (needs 10.3), and the final step of the walkthrough — `uvicorn` and
-  `npm run dev` actually up with the page open. Everything before that step
-  is verified.*
+  *Finished 18 Nov. The last walkthrough step was run — both servers up,
+  `/health` answering `{"status": "ok", "version": "0.1.0"}` and the app on
+  screen — though from the working copy rather than the temp clone, because
+  Windows had cleared the temp folder in the intervening fortnight. The
+  screenshot in `docs/screenshot.png` was taken with the project's own
+  Playwright after the browser extension's capture timed out three times.*
+  *Still missing one listed item: the **demo link**, which cannot exist
+  until 10.3 deploys something to link to. The README says so in its status
+  line. That is the only reason this box is not ticked.*
 
 - [ ] **11.3 Tidy DECISIONS.md** — read it end to end, fix what's no longer
   true, add anything you decided but never wrote down. ~30 min

@@ -8,7 +8,14 @@ it affects, and a corrected code snippet. Anything Claude had to guess is
 marked as a guess, so you never paste in an invented `alt` text believing the
 tool knew what the image showed.
 
-<!-- SCREENSHOT -->
+![A11y-Lens with a finished report on screen: the address box and Scan button
+at the top, then "6 problems found — 3 critical, 2 serious, 1 moderate", and
+the first finding, a button with no accessible name, explained in plain
+language with a corrected snippet underneath.](docs/screenshot.png)
+
+*The example report the app shows before your first scan. Its explanations
+were written by hand rather than generated, because this project has no API
+budget yet — a live scan produces the same shape.*
 
 **Status:** in development, and deliberately not deployed yet. The live link
 goes here once task 10.3 is done; see [TASKS.md](TASKS.md) for what is left.
